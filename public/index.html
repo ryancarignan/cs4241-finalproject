@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>A4 Game</title>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #000;
+        overflow: hidden;
+        font-family: system-ui, sans-serif;
+      }
+
+      .overlay {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.75);
+        z-index: 10;
+      }
+
+      .overlay.hidden {
+        display: none;
+      }
+
+      .panel {
+        background: #1a1826;
+        color: #fff;
+        padding: 24px 32px;
+        border-radius: 10px;
+        max-width: 380px;
+        text-align: center;
+        box-shadow: 0 0 24px rgba(0, 0, 0, 0.6);
+      }
+
+      .panel h1, .panel h2 {
+        margin-top: 0;
+      }
+
+      .panel p {
+        text-align: left;
+        line-height: 1.4;
+      }
+
+      .panel button {
+        margin-top: 16px;
+        padding: 20px 24px;
+        font-size: 16px;
+        border: none;
+        border-radius: 6px;
+        background: #4c78ff;
+        color: #fff;
+        cursor: pointer;
+      }
+
+      .panel button:hover {
+        background: #6c8fff;
+      }
+
+      #settings-container {
+        margin: 16px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="intro-overlay" class="overlay">
+      <div class="panel">
+        <h1>Auto-Shooter</h1>
+        <p>Movement: <b>WASD</b> or <b>Arrow Keys</b></p>
+        <p>Your character fires automatically at the nearest enemy.</p>
+        <p>Enemies spawn faster the longer you survive. You can take up to 4 hits before you die.</p>
+        <p>Press <b>Esc</b> anytime to pause and adjust settings.</p>
+        <p>If you can't move, click the screen with any mouse button!</p>
+        <button id="start-btn">Start</button>
+      </div>
+    </div>
+
+    <div id="pause-overlay" class="overlay hidden">
+      <div class="panel">
+        <h2>Paused</h2>
+        <div id="settings-container"></div>
+        <button id="resume-btn">Resume</button>
+      </div>
+    </div>
+
+    <script type="module" src="game.js"></script>
+  </body>
+</html>

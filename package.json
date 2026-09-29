@@ -1,0 +1,13 @@
+{
+  "name": "cs4241-finalproject",
+  "version": "1.0.0",
+  "description": "KAPLAY vampire survivors game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.22.3",
+    "server": "^1.0.42"
+  }
+}
