@@ -126,6 +126,11 @@ scene("game", () => {
   let playerLevel = 0;
   let nextPlayerLevelXP = FIRST_PLAYER_LEVEL_XP;
 
+  // XP / Leveling
+  let xp = 0;
+  let playerLevel = 0;
+  let nextPlayerLevelXP = FIRST_PLAYER_LEVEL_XP;
+
   // Player
   const player = add([
     circle(PLAYER_RADIUS),
