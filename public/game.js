@@ -19,10 +19,14 @@ const settings = {
   spawnInterval: 1.5,
 };
 
+// Display constants
 const PLAYER_RADIUS = 16;
 const ENEMY_RADIUS = 14;
 const BULLET_RADIUS = 4;
+const XP_RADIUS = 3;
 const BULLET_SPEED = 600;
+const XP_COLOR = [247, 174, 248];
+const BAR_COLOR = [69, 69, 75];
 
 const MAX_HP = 4;
 
@@ -30,6 +34,14 @@ const MAX_HP = 4;
 const SPAWN_STEP_SECONDS = 10;
 const SPAWN_SPEEDUP = 0.75;
 const MIN_SPAWN_INTERVAL = 0.01;
+
+// XP / leveling constants
+const XP_SPEED = 3;
+const XP_SPEED_SCALING_FACTOR = 5;
+const XP_COLLECTION_RADIUS = 250;
+const FIRST_PLAYER_LEVEL_XP = 10;
+const PLAYER_LEVEL_XP_SCALING_FACTOR = 3;
+const LEVEL_TEXT_POS = vec2(16, 16 + 20 + 16 + 20 + 4)
 
 // pause the game as long as an overlay exists
 let paused = true;
@@ -97,6 +109,11 @@ scene("game", () => {
   let spawnTimer = 0;
   let fireTimer = 0;
   let spawnInterval = settings.spawnInterval;
+
+  // XP / Leveling
+  let xp = 0;
+  let playerLevel = 0;
+  let nextPlayerLevelXP = FIRST_PLAYER_LEVEL_XP;
 
   // Player
   const player = add([
@@ -230,6 +247,7 @@ scene("game", () => {
 
       for (const e of get("enemy")) {
         if (bullet.pos.dist(e.pos) < BULLET_RADIUS + ENEMY_RADIUS) {
+          dropXP(e.pos.x, e.pos.y);
           destroy(e);
           destroy(bullet);
           score++;
@@ -238,6 +256,77 @@ scene("game", () => {
         }
       }
     });
+  }
+
+  function dropXP(xPos, yPos) {
+    const xp = add([
+      circle(XP_RADIUS),
+      pos(xPos, yPos),
+      color(...XP_COLOR),
+      "xp"
+    ]);
+
+    xp.onUpdate(() => {
+      if (!alive || paused) return;
+
+      const dir = player.pos.sub(xp.pos).unit();
+      const distFromPlayer = xp.pos.dist(player.pos);
+
+      const speed = XP_SPEED * (Math.max(0, ((XP_COLLECTION_RADIUS - distFromPlayer) * 0.01)) ** XP_SPEED_SCALING_FACTOR);
+      xp.move(dir.scale(Math.max(speed, 0)))
+
+      if (xp.pos.dist(player.pos) < PLAYER_RADIUS + XP_RADIUS) {
+        destroy(xp);
+        incrementPlayerXP();
+      }
+    });
+  }
+
+  function incrementPlayerXP() {
+    const xpColors = rgb(124, 252, 0);
+    xp++;
+    // restart if player dies
+    if (xp >= nextPlayerLevelXP) {
+      xp %= nextPlayerLevelXP;
+      levelUpPlayer();
+    }
+  }
+
+  function levelUpPlayer() {
+    playerLevel++;
+    nextPlayerLevelXP = FIRST_PLAYER_LEVEL_XP + PLAYER_LEVEL_XP_SCALING_FACTOR ** playerLevel;
+    const levelTextPos = vec2(LEVEL_TEXT_POS.x + 47.5, LEVEL_TEXT_POS.y + 5);
+    circleEffect(levelTextPos);
+  }
+
+  function circleEffect(position) {
+    const NUM_PLAYS = 2;
+    const END_RADIUS = 40;
+    const ANIMATION_LENGTH = 0.6;
+    const ANIMATION_LENGTH_INCREMENT = 0.05;
+
+    const play = (animationLengthAddition) => {
+      const circleAnimation = add([
+        pos(position),
+        circle(2, { fill: false }),
+        outline(2, new Color(255, 255, 255)),
+        anchor("center"),
+        timer(),
+      ]);
+      circleAnimation
+        .tween(1, END_RADIUS, ANIMATION_LENGTH + animationLengthAddition, (radius) => { circleAnimation.radius = radius }, easings.easeOutQuad)
+        .onEnd(() => circleAnimation.destroy());
+    };
+
+    for (let i = 0; i < NUM_PLAYS; i++) {
+      if (i == 0) {
+        play(0);
+      } else {
+        wait(0.2, () => {
+          play(i * ANIMATION_LENGTH_INCREMENT);
+        });
+      }
+    }
   }
 
   // fire on a timer
@@ -251,20 +340,41 @@ scene("game", () => {
     }
   });
 
-  // UI for health bar
   onDraw(() => {
-    const barWidth = 160;
+    // UI for health bar
+    const healthBarWidth = 160;
     drawRect({
       pos: vec2(16, 16),
-      width: barWidth,
+      width: healthBarWidth,
       height: 20,
       color: rgb(206, 0, 0),
     });
     drawRect({
       pos: vec2(16, 16),
-      width: (barWidth * Math.max(hp, 0)) / MAX_HP,
+      width: (healthBarWidth * Math.max(hp, 0)) / MAX_HP,
       height: 20,
       color: rgb(0, 255, 102),
+    });
+
+    // UI for XP bar
+    const xpBarWidth = healthBarWidth;
+    drawRect({
+      pos: vec2(16, 16 + 20 + 16),
+      width: xpBarWidth,
+      height: 20,
+      color: rgb(...BAR_COLOR),
+    });
+    drawRect({
+      pos: vec2(16, 16 + 20 + 16),
+      width: (xpBarWidth * xp) / nextPlayerLevelXP,
+      height: 20,
+      color: rgb(...XP_COLOR),
+    });
+    drawText({
+      text: `Level ${playerLevel + 1}`,
+      size: 12,
+      pos: LEVEL_TEXT_POS,
+      color: rgb(255, 255, 255),
     });
   });
 });
