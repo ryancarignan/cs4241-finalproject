@@ -17,12 +17,21 @@ const settings = {
   enemySpeed: 180,
   fireInterval: 0.5,
   spawnInterval: 1.5,
+  projectileSpeed: 600,
+  projectileCount: 1,
+  healthRegen: 0,
+  xp_collection_radius: 250,
 };
 
+// Display constants
 const PLAYER_RADIUS = 16;
 const ENEMY_RADIUS = 14;
 const BULLET_RADIUS = 4;
-const BULLET_SPEED = 600;
+const XP_RADIUS = 3;
+const UPGRADE_CARD_WIDTH = 190;
+const UPGRADE_CARD_HEIGHT = 190;
+const XP_COLOR = [247, 174, 248];
+const BAR_COLOR = [69, 69, 75];
 
 const MAX_HP = 4;
 
@@ -31,12 +40,21 @@ const SPAWN_STEP_SECONDS = 10;
 const SPAWN_SPEEDUP = 0.75;
 const MIN_SPAWN_INTERVAL = 0.01;
 
+// XP / leveling constants
+const XP_SPEED = 3;
+const XP_SPEED_SCALING_FACTOR = 5;
+const FIRST_PLAYER_LEVEL_XP = 10;
+const PLAYER_LEVEL_XP_SCALING_FACTOR = 3;
+const LEVEL_TEXT_POS = vec2(16, 16 + 20 + 16 + 20 + 4)
+
 // pause the game as long as an overlay exists
 let paused = true;
+let levelUpPending = false;
 
 // Overlay wiring
 const introOverlay = document.getElementById("intro-overlay");
 const pauseOverlay = document.getElementById("pause-overlay");
+
 
 document.getElementById("start-btn").addEventListener("click", () => {
   introOverlay.classList.add("hidden");
@@ -56,6 +74,7 @@ window.addEventListener("keydown", (e) => {
 function togglePause() {
   // ignore "Esc" key until the intro has been dismissed
   if (!introOverlay.classList.contains("hidden")) return;
+  if (levelUpPending) return;
 
   if (paused) {
     pauseOverlay.classList.add("hidden");
@@ -96,7 +115,16 @@ scene("game", () => {
   let alive = true;
   let spawnTimer = 0;
   let fireTimer = 0;
+  let healthRegenTimer = 0;
   let spawnInterval = settings.spawnInterval;
+  let levelUpUpgrades = [];
+
+  levelUpPending = false;
+
+  // XP / Leveling
+  let xp = 0;
+  let playerLevel = 0;
+  let nextPlayerLevelXP = FIRST_PLAYER_LEVEL_XP;
 
   // Player
   const player = add([
@@ -109,6 +137,18 @@ scene("game", () => {
   // Player movement with WASD or arrow keys
   player.onUpdate(() => {
     if (!alive || paused) return;
+    
+    // Health regen
+    if (settings.healthRegen > 0 && hp < MAX_HP) {
+      healthRegenTimer += dt();
+      while (healthRegenTimer >= 1 && hp < MAX_HP) {
+        hp = Math.min(hp + settings.healthRegen, MAX_HP);
+        healthRegenTimer -= 1;
+      }
+      if (hp >= MAX_HP) healthRegenTimer = 0;
+    } else {
+      healthRegenTimer = 0;
+    }
 
     const dir = vec2(0, 0);
     if (isKeyDown("left") || isKeyDown("a")) dir.x -= 1;
@@ -208,36 +248,153 @@ scene("game", () => {
 
   function shootAt(target) {
     const dir = target.pos.sub(player.pos).unit();
-    const bullet = add([
-      circle(BULLET_RADIUS),
-      pos(player.pos.clone()),
-      anchor("center"),
-      color(255, 220, 0),
-      "bullet",
+    const baseAngle = Math.atan2(dir.y, dir.x);
+
+    for (let i = 0; i < settings.projectileCount; i++) {
+      const spread = (i - (settings.projectileCount - 1) / 2) * (Math.PI / 18);
+      const bulletDir = vec2(Math.cos(baseAngle + spread), Math.sin(baseAngle + spread));
+      const bullet = add([
+        circle(BULLET_RADIUS),
+        pos(player.pos.clone()),
+        anchor("center"),
+        color(255, 220, 0),
+        "bullet",
+      ]);
+
+      bullet.onUpdate(() => {
+        if (paused) return;
+        bullet.move(bulletDir.scale(settings.projectileSpeed));
+
+        if (
+          bullet.pos.x < -20 || bullet.pos.x > width() + 20 ||
+          bullet.pos.y < -20 || bullet.pos.y > height() + 20
+        ) {
+          destroy(bullet);
+          return;
+        }
+
+        for (const e of get("enemy")) {
+          if (bullet.pos.dist(e.pos) < BULLET_RADIUS + ENEMY_RADIUS) {
+            dropXP(e.pos.x, e.pos.y);
+            destroy(e);
+            destroy(bullet);
+            score++;
+            scoreLabel.text = `Score: ${score}`;
+            break;
+          }
+        }
+      });
+    }
+  }
+
+  function dropXP(xPos, yPos) {
+    const xp = add([
+      circle(XP_RADIUS),
+      pos(xPos, yPos),
+      color(...XP_COLOR),
+      "xp"
     ]);
 
-    bullet.onUpdate(() => {
-      if (paused) return;
-      bullet.move(dir.scale(BULLET_SPEED));
+    xp.onUpdate(() => {
+      if (!alive || paused) return;
 
-      if (
-        bullet.pos.x < -20 || bullet.pos.x > width() + 20 ||
-        bullet.pos.y < -20 || bullet.pos.y > height() + 20
-      ) {
-        destroy(bullet);
-        return;
-      }
+      const dir = player.pos.sub(xp.pos).unit();
+      const distFromPlayer = xp.pos.dist(player.pos);
 
-      for (const e of get("enemy")) {
-        if (bullet.pos.dist(e.pos) < BULLET_RADIUS + ENEMY_RADIUS) {
-          destroy(e);
-          destroy(bullet);
-          score++;
-          scoreLabel.text = `Score: ${score}`;
-          break;
-        }
+      const speed = XP_SPEED * (Math.max(0, ((settings.xp_collection_radius - distFromPlayer) * 0.01)) ** XP_SPEED_SCALING_FACTOR);
+      xp.move(dir.scale(Math.max(speed, 0)))
+
+      if (xp.pos.dist(player.pos) < PLAYER_RADIUS + XP_RADIUS) {
+        destroy(xp);
+        incrementPlayerXP();
       }
     });
+  }
+
+  function incrementPlayerXP() {
+    const xpColors = rgb(124, 252, 0);
+    xp++;
+    // restart if player dies
+    if (xp >= nextPlayerLevelXP) {
+      xp %= nextPlayerLevelXP;
+      levelUpPlayer();
+    }
+  }
+
+  // level upgrades
+  function levelUpPlayer() {
+    playerLevel++;
+    nextPlayerLevelXP = FIRST_PLAYER_LEVEL_XP + PLAYER_LEVEL_XP_SCALING_FACTOR ** playerLevel;
+    const upgrades = [
+      { name: "Projectile Speed", description: "Bullets travel 25% faster.", apply: () => { settings.projectileSpeed *= 1.25; } },
+      { name: "Projectile Count", description: "Fire one additional bullet.", apply: () => { settings.projectileCount++; } },
+      { name: "Player Speed", description: "Move 15% faster.", apply: () => { settings.playerSpeed *= 1.15; } },
+      { name: "Attack Speed", description: "Fire 20% more often.", apply: () => { settings.fireInterval /= 1.2; } },
+      { name: "Health Regen", description: "Regenerate health each second.", apply: () => { settings.healthRegen++; } },
+      { name: "XP Collection Radius", description: "Increase the radius at which XP is collected.", apply: () => { settings.xp_collection_radius += 50; } }
+    ];
+    levelUpUpgrades = [];
+    while (levelUpUpgrades.length < 3) {
+      const index = randi(upgrades.length);
+      levelUpUpgrades.push(upgrades.splice(index, 1)[0]);
+    }
+    levelUpPending = true;
+    paused = true;
+    const levelTextPos = vec2(LEVEL_TEXT_POS.x + 47.5, LEVEL_TEXT_POS.y + 5);
+    circleEffect(levelTextPos);
+  }
+
+  onMousePress((button) => {
+    if (button !== "left" || !levelUpPending) return;
+
+    const mouse = mousePos();
+    const cardGap = 20;
+    const cardsWidth = UPGRADE_CARD_WIDTH * levelUpUpgrades.length + cardGap * (levelUpUpgrades.length - 1);
+    const firstCardX = (width() - cardsWidth) / 2;
+    const cardY = (height() - UPGRADE_CARD_HEIGHT) / 2;
+
+    for (let i = 0; i < levelUpUpgrades.length; i++) {
+      const cardX = firstCardX + i * (UPGRADE_CARD_WIDTH + cardGap);
+      if (
+        mouse.x < cardX || mouse.x > cardX + UPGRADE_CARD_WIDTH ||
+        mouse.y < cardY || mouse.y > cardY + UPGRADE_CARD_HEIGHT
+      ) continue;
+
+      levelUpUpgrades[i].apply();
+      levelUpPending = false;
+      paused = false;
+      return;
+    }
+  });
+
+  function circleEffect(position) {
+    const NUM_PLAYS = 2;
+    const END_RADIUS = 40;
+    const ANIMATION_LENGTH = 0.6;
+    const ANIMATION_LENGTH_INCREMENT = 0.05;
+
+    const play = (animationLengthAddition) => {
+      const circleAnimation = add([
+        pos(position),
+        circle(2, { fill: false }),
+        outline(2, new Color(255, 255, 255)),
+        anchor("center"),
+        timer(),
+      ]);
+      circleAnimation
+        .tween(1, END_RADIUS, ANIMATION_LENGTH + animationLengthAddition, (radius) => { circleAnimation.radius = radius }, easings.easeOutQuad)
+        .onEnd(() => circleAnimation.destroy());
+    };
+
+    for (let i = 0; i < NUM_PLAYS; i++) {
+      if (i == 0) {
+        play(0);
+      } else {
+        wait(0.2, () => {
+          play(i * ANIMATION_LENGTH_INCREMENT);
+        });
+      }
+    }
   }
 
   // fire on a timer
@@ -251,21 +408,90 @@ scene("game", () => {
     }
   });
 
-  // UI for health bar
   onDraw(() => {
-    const barWidth = 160;
+    // UI for health bar
+    const healthBarWidth = 160;
     drawRect({
       pos: vec2(16, 16),
-      width: barWidth,
+      width: healthBarWidth,
       height: 20,
       color: rgb(206, 0, 0),
     });
     drawRect({
       pos: vec2(16, 16),
-      width: (barWidth * Math.max(hp, 0)) / MAX_HP,
+      width: (healthBarWidth * Math.max(hp, 0)) / MAX_HP,
       height: 20,
       color: rgb(0, 255, 102),
     });
+
+    // UI for XP bar
+    const xpBarWidth = healthBarWidth;
+    drawRect({
+      pos: vec2(16, 16 + 20 + 16),
+      width: xpBarWidth,
+      height: 20,
+      color: rgb(...BAR_COLOR),
+    });
+    drawRect({
+      pos: vec2(16, 16 + 20 + 16),
+      width: (xpBarWidth * xp) / nextPlayerLevelXP,
+      height: 20,
+      color: rgb(...XP_COLOR),
+    });
+    drawText({
+      text: `Level ${playerLevel + 1}`,
+      size: 12,
+      pos: LEVEL_TEXT_POS,
+      color: rgb(255, 255, 255),
+    });
+
+    if (levelUpPending) {
+      drawRect({
+        pos: vec2(0, 0),
+        width: width(),
+        height: height(),
+        color: rgb(0, 0, 0),
+        opacity: 0.8,
+      });
+      drawText({
+        text: "Level Up! Choose an upgrade",
+        size: 30,
+        pos: vec2(width() / 2, height() / 2 - UPGRADE_CARD_HEIGHT / 2 - 45),
+        anchor: "center",
+        color: rgb(255, 255, 255),
+      });
+
+      const cardGap = 20;
+      const cardsWidth = UPGRADE_CARD_WIDTH * levelUpUpgrades.length + cardGap * (levelUpUpgrades.length - 1);
+      const firstCardX = (width() - cardsWidth) / 2;
+      const cardY = (height() - UPGRADE_CARD_HEIGHT) / 2;
+
+      for (let i = 0; i < levelUpUpgrades.length; i++) {
+        const cardX = firstCardX + i * (UPGRADE_CARD_WIDTH + cardGap);
+        drawRect({
+          pos: vec2(cardX, cardY),
+          width: UPGRADE_CARD_WIDTH,
+          height: UPGRADE_CARD_HEIGHT,
+          color: rgb(26, 24, 38),
+          outline: { color: rgb(108, 143, 255), width: 2 },
+        });
+        drawText({
+          text: levelUpUpgrades[i].name,
+          size: 18,
+          pos: vec2(cardX + UPGRADE_CARD_WIDTH / 2, cardY + 42),
+          anchor: "center",
+          color: rgb(255, 255, 255),
+        });
+        drawText({
+          text: levelUpUpgrades[i].description,
+          size: 14,
+          width: UPGRADE_CARD_WIDTH - 24,
+          pos: vec2(cardX + UPGRADE_CARD_WIDTH / 2, cardY + 105),
+          anchor: "center",
+          color: rgb(210, 210, 220),
+        });
+      }
+    }
   });
 });
 
