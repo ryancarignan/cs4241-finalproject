@@ -72,7 +72,9 @@ window.addEventListener("keydown", (e) => {
 });
 
 function togglePause() {
-  // ignore "Esc" key until the intro has been dismissed
+  // ignore "Esc" key until the intro has been dismissed and while the login or leaderboard screen is showing
+  if (!document.getElementById("auth-overlay").classList.contains("hidden")) return;
+  if (!document.getElementById("dashboard-overlay").classList.contains("hidden")) return;
   if (!introOverlay.classList.contains("hidden")) return;
   if (levelUpPending) return;
 
@@ -110,6 +112,24 @@ try {
   container.style.color = "#ff8080";
 }
 
+async function submitScore(finalScore) {
+  try {
+    const res = await fetch("/api/score", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ score: finalScore }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      console.log("Score saved successfully!");
+    } else {
+      console.error("Score submission error:", data.error);
+    }
+  } catch (err) {
+    console.error("Failed to post score:", err);
+  }
+}
+
 scene("game", () => {
   let hp = MAX_HP;
   let alive = true;
@@ -121,15 +141,13 @@ scene("game", () => {
 
   levelUpPending = false;
 
-  // XP / Leveling
-  let xp = 0;
-  let playerLevel = 0;
-  let nextPlayerLevelXP = FIRST_PLAYER_LEVEL_XP;
+  let submittingScore = false;
 
   // XP / Leveling
   let xp = 0;
   let playerLevel = 0;
   let nextPlayerLevelXP = FIRST_PLAYER_LEVEL_XP;
+
 
   // Player
   const player = add([
@@ -169,7 +187,7 @@ scene("game", () => {
     player.pos.y = clamp(player.pos.y, PLAYER_RADIUS, height() - PLAYER_RADIUS);
   });
 
-  function hurtPlayer() {
+  async function hurtPlayer() {
     const hurtColors = rgb(165, 35, 35);
     hp--;
     shake(6);
@@ -179,6 +197,22 @@ scene("game", () => {
       alive = false;
       destroy(player);
       wait(2, () => go("game"));
+
+      if(!submittingScore){
+        submittingScore = true;
+        await submitScore(score);
+        wait(1.5, async () => {
+          paused = true;
+          if(window.showDashboard){
+            const res = await fetch("/api/user");
+            const userData = await res.json();
+            if(userData.loggedIn){
+              window.showDashboard(userData.username);
+            }
+          }
+          go("game");
+        });
+      }
     }
   }
 
