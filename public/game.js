@@ -25,7 +25,7 @@ const ENEMY_RADIUS = 14;
 const BULLET_RADIUS = 4;
 const XP_RADIUS = 3;
 const BULLET_SPEED = 600;
-const XP_COLOR = [247, 174, 248];
+const XP_COLOR = [44, 239, 242];
 const BAR_COLOR = [69, 69, 75];
 
 const MAX_HP = 4;
@@ -42,6 +42,53 @@ const XP_COLLECTION_RADIUS = 250;
 const FIRST_PLAYER_LEVEL_XP = 10;
 const PLAYER_LEVEL_XP_SCALING_FACTOR = 3;
 const LEVEL_TEXT_POS = vec2(16, 16 + 20 + 16 + 20 + 4)
+
+// load player sprite
+loadSprite("player", [
+  "art/player/l0_sprite_player1.png",
+  "art/player/l0_sprite_player2.png",
+  "art/player/l0_sprite_player3.png",
+  "art/player/l0_sprite_player4.png",
+  "art/player/l0_sprite_player5.png",
+  "art/player/l0_sprite_player6.png",
+  "art/player/l0_sprite_player7.png",
+], {
+  anims: {
+    idle: { from: 0, to: 6, loop: true, speed: 10 },
+  },
+});
+
+// load enemy sprite
+loadSprite("enemy", [
+  "art/enemy/l0_sprite_enemy1.png",
+  "art/enemy/l0_sprite_enemy2.png",
+  "art/enemy/l0_sprite_enemy3.png",
+  "art/enemy/l0_sprite_enemy4.png",
+  "art/enemy/l0_sprite_enemy5.png",
+  "art/enemy/l0_sprite_enemy6.png",
+  "art/enemy/l0_sprite_enemy7.png",
+], {
+  anims: {
+    walk: { from: 0, to: 6, loop: true, speed: 10 },
+  },
+});
+
+// load xp sprite 
+loadSprite("xp", [
+  "art/xp/l0_sprite_XP_updated1.png",
+  "art/xp/l0_sprite_XP_updated2.png",
+  "art/xp/l0_sprite_XP_updated3.png",
+  "art/xp/l0_sprite_XP_updated4.png",
+  "art/xp/l0_sprite_XP_updated5.png",
+  "art/xp/l0_sprite_XP_updated6.png",
+  "art/xp/l0_sprite_XP_updated7.png",
+  "art/xp/l0_sprite_XP_updated8.png",
+  "art/xp/l0_sprite_XP_updated9.png",
+], {
+  anims: {
+    spin: { from: 0, to: 8, loop: true, speed: 10 },
+  },
+});
 
 // pause the game as long as an overlay exists
 let paused = true;
@@ -117,10 +164,10 @@ scene("game", () => {
 
   // Player
   const player = add([
-    circle(PLAYER_RADIUS),
+    sprite("player", { anim: "idle" }),
     pos(center()),
     anchor("center"),
-    color(60, 120, 255),
+    scale(3)
   ]);
 
   // Player movement with WASD or arrow keys
@@ -174,10 +221,10 @@ scene("game", () => {
     else p = vec2(-margin, rand(0, height()));
 
     const enemy = add([
-      circle(ENEMY_RADIUS),
+      sprite("enemy", { anim: "walk" }),
       pos(p),
       anchor("center"),
-      color(255, 50, 50),
+      scale(3),
       "enemy",
     ]);
 
@@ -260,10 +307,11 @@ scene("game", () => {
 
   function dropXP(xPos, yPos) {
     const xp = add([
-      circle(XP_RADIUS),
+      sprite("xp", { anim: "spin" }),
       pos(xPos, yPos),
-      color(...XP_COLOR),
-      "xp"
+      anchor("center"),
+      scale(1.5),
+      "xp",
     ]);
 
     xp.onUpdate(() => {
@@ -273,7 +321,7 @@ scene("game", () => {
       const distFromPlayer = xp.pos.dist(player.pos);
 
       const speed = XP_SPEED * (Math.max(0, ((XP_COLLECTION_RADIUS - distFromPlayer) * 0.01)) ** XP_SPEED_SCALING_FACTOR);
-      xp.move(dir.scale(Math.max(speed, 0)))
+      xp.move(dir.scale(Math.max(speed, 0)));
 
       if (xp.pos.dist(player.pos) < PLAYER_RADIUS + XP_RADIUS) {
         destroy(xp);
@@ -281,7 +329,6 @@ scene("game", () => {
       }
     });
   }
-
   function incrementPlayerXP() {
     const xpColors = rgb(124, 252, 0);
     xp++;
