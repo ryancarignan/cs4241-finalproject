@@ -21,12 +21,25 @@ const settings = {
   projectileCount: 1,
   healthRegen: 0,
   xp_collection_radius: 250,
+  explosiveBullets: false,
 };
+
+let upgrades = [
+  { name: "Projectile Speed", description: "Bullets travel 25% faster.", apply: () => { settings.projectileSpeed *= 1.25; } },
+  { name: "Projectile Count", description: "Fire one additional bullet.", apply: () => { settings.projectileCount++; } },
+  { name: "Player Speed", description: "Move 15% faster.", apply: () => { settings.playerSpeed *= 1.15; } },
+  { name: "Attack Speed", description: "Fire 20% more often.", apply: () => { settings.fireInterval /= 1.2; } },
+  { name: "Health Regen", description: "Regenerate health each second.", apply: () => { settings.healthRegen++; } },
+  { name: "XP Collection Radius", description: "Increase the radius at which XP is collected.", apply: () => { settings.xp_collection_radius += 50; } },
+  { name: "Bullet Explosion", description: "25% change of bullet exploding on impact, damaging nearby enemies.", apply: () => { settings.explosiveBullets = true; } },
+];
 
 // Display constants
 const PLAYER_RADIUS = 16;
 const ENEMY_RADIUS = 14;
 const BULLET_RADIUS = 4;
+const BULLET_COLOR = [255, 220, 0];
+const EXPLOSION_RADIUS = 50;
 const XP_RADIUS = 3;
 const UPGRADE_CARD_WIDTH = 190;
 const UPGRADE_CARD_HEIGHT = 190;
@@ -257,7 +270,7 @@ scene("game", () => {
         circle(BULLET_RADIUS),
         pos(player.pos.clone()),
         anchor("center"),
-        color(255, 220, 0),
+        color(BULLET_COLOR),
         "bullet",
       ]);
 
@@ -273,13 +286,25 @@ scene("game", () => {
           return;
         }
 
+        const killEnemy = (e) => {
+          dropXP(e.pos.x, e.pos.y);
+          destroy(e);
+          destroy(bullet);
+          score++;
+          scoreLabel.text = `Score: ${score}`;
+        }
+
         for (const e of get("enemy")) {
           if (bullet.pos.dist(e.pos) < BULLET_RADIUS + ENEMY_RADIUS) {
-            dropXP(e.pos.x, e.pos.y);
-            destroy(e);
-            destroy(bullet);
-            score++;
-            scoreLabel.text = `Score: ${score}`;
+            if (settings.explosiveBullets && Math.random() <= 0.25) {
+              circleEffect(bullet.pos, EXPLOSION_RADIUS, 1, BULLET_COLOR)
+              for (const e of get("enemy")) {
+                if (bullet.pos.dist(e.pos) < EXPLOSION_RADIUS + ENEMY_RADIUS) {
+                  killEnemy(e);
+                }
+              }
+            }
+            killEnemy(e);
             break;
           }
         }
@@ -325,23 +350,20 @@ scene("game", () => {
   function levelUpPlayer() {
     playerLevel++;
     nextPlayerLevelXP = FIRST_PLAYER_LEVEL_XP + PLAYER_LEVEL_XP_SCALING_FACTOR ** playerLevel;
-    const upgrades = [
-      { name: "Projectile Speed", description: "Bullets travel 25% faster.", apply: () => { settings.projectileSpeed *= 1.25; } },
-      { name: "Projectile Count", description: "Fire one additional bullet.", apply: () => { settings.projectileCount++; } },
-      { name: "Player Speed", description: "Move 15% faster.", apply: () => { settings.playerSpeed *= 1.15; } },
-      { name: "Attack Speed", description: "Fire 20% more often.", apply: () => { settings.fireInterval /= 1.2; } },
-      { name: "Health Regen", description: "Regenerate health each second.", apply: () => { settings.healthRegen++; } },
-      { name: "XP Collection Radius", description: "Increase the radius at which XP is collected.", apply: () => { settings.xp_collection_radius += 50; } }
-    ];
     levelUpUpgrades = [];
-    while (levelUpUpgrades.length < 3) {
-      const index = randi(upgrades.length);
-      levelUpUpgrades.push(upgrades.splice(index, 1)[0]);
+    const availableUpgrades = [...upgrades];
+    if (settings.explosiveBullets) { // Remove explosion upgrade if already bought
+      const eBIndex = availableUpgrades.findIndex(u => u.name === "Bullet Explosion");
+      if (eBIndex !== -1) availableUpgrades.splice(eBIndex, 1);
+    }
+    while (levelUpUpgrades.length < 3 && availableUpgrades.length > 0) {
+      const index = randi(availableUpgrades.length);
+      levelUpUpgrades.push(availableUpgrades.splice(index, 1)[0]);
     }
     levelUpPending = true;
     paused = true;
     const levelTextPos = vec2(LEVEL_TEXT_POS.x + 47.5, LEVEL_TEXT_POS.y + 5);
-    circleEffect(levelTextPos);
+    circleEffect(levelTextPos, 40, 2, XP_COLOR);
   }
 
   onMousePress((button) => {
@@ -367,9 +389,7 @@ scene("game", () => {
     }
   });
 
-  function circleEffect(position) {
-    const NUM_PLAYS = 2;
-    const END_RADIUS = 40;
+  function circleEffect(position, radius, times, color) {
     const ANIMATION_LENGTH = 0.6;
     const ANIMATION_LENGTH_INCREMENT = 0.05;
 
@@ -377,16 +397,16 @@ scene("game", () => {
       const circleAnimation = add([
         pos(position),
         circle(2, { fill: false }),
-        outline(2, new Color(255, 255, 255)),
+        outline(2, new Color(...color)),
         anchor("center"),
         timer(),
       ]);
       circleAnimation
-        .tween(1, END_RADIUS, ANIMATION_LENGTH + animationLengthAddition, (radius) => { circleAnimation.radius = radius }, easings.easeOutQuad)
+        .tween(1, radius, ANIMATION_LENGTH + animationLengthAddition, (radius) => { circleAnimation.radius = radius }, easings.easeOutQuad)
         .onEnd(() => circleAnimation.destroy());
     };
 
-    for (let i = 0; i < NUM_PLAYS; i++) {
+    for (let i = 0; i < times; i++) {
       if (i == 0) {
         play(0);
       } else {
