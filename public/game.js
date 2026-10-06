@@ -22,6 +22,7 @@ const settings = {
   healthRegen: 0,
   xp_collection_radius: 250,
   explosiveBullets: false,
+  bulletSplit: false,
 };
 
 let upgrades = [
@@ -31,15 +32,16 @@ let upgrades = [
   { name: "Attack Speed", description: "Fire 20% more often.", apply: () => { settings.fireInterval /= 1.2; } },
   { name: "Health Regen", description: "Regenerate health each second.", apply: () => { settings.healthRegen++; } },
   { name: "XP Collection Radius", description: "Increase the radius at which XP is collected.", apply: () => { settings.xp_collection_radius += 50; } },
-  { name: "Bullet Explosion", description: "25% change of bullet exploding on impact, damaging nearby enemies.", apply: () => { settings.explosiveBullets = true; } },
+  { name: "Explosive Bullets", description: "25% change of bullet exploding on impact, damaging nearby enemies.", apply: () => { settings.explosiveBullets = true; } },
+  { name: "Split Bullets", description: "Bullets split in two after a distance.", apply: () => { settings.bulletSplit = true; } },
 ];
 
 // Display constants
 const PLAYER_RADIUS = 16;
 const ENEMY_RADIUS = 14;
 const BULLET_RADIUS = 4;
+const ENEMY_COLOR = [255, 50, 50];
 const BULLET_COLOR = [255, 220, 0];
-const EXPLOSION_RADIUS = 50;
 const XP_RADIUS = 3;
 const UPGRADE_CARD_WIDTH = 190;
 const UPGRADE_CARD_HEIGHT = 190;
@@ -59,6 +61,11 @@ const XP_SPEED_SCALING_FACTOR = 5;
 const FIRST_PLAYER_LEVEL_XP = 10;
 const PLAYER_LEVEL_XP_SCALING_FACTOR = 3;
 const LEVEL_TEXT_POS = vec2(16, 16 + 20 + 16 + 20 + 4)
+
+// Upgrades constants
+const BULLET_SPLIT_DISTANCE = 15000;
+const BULLET_SPLIT_ANGLE = 7.5;
+const EXPLOSION_RADIUS = 50;
 
 // pause the game as long as an overlay exists
 let paused = true;
@@ -213,7 +220,7 @@ scene("game", () => {
       circle(ENEMY_RADIUS),
       pos(p),
       anchor("center"),
-      color(255, 50, 50),
+      color(ENEMY_COLOR),
       "enemy",
     ]);
 
@@ -259,6 +266,69 @@ scene("game", () => {
     return best;
   }
 
+  function shoot(position, direction, split) {
+    const bullet = add([
+      circle(BULLET_RADIUS),
+      pos(position),
+      anchor("center"),
+      color(BULLET_COLOR),
+      "bullet",
+      {
+        distanceTraveled: 0,
+      }
+    ]);
+
+    bullet.onUpdate(() => {
+      if (paused) return;
+
+      const moveVector = direction.scale(settings.projectileSpeed);
+      const moveDistance = Math.sqrt(moveVector.x ** 2 + moveVector.y ** 2);
+      bullet.distanceTraveled += moveDistance;
+      bullet.move(moveVector);
+
+      if (split && bullet.distanceTraveled >= BULLET_SPLIT_DISTANCE) {
+        const directionAngle = Math.atan2(direction.y, direction.x);
+        const splitAngle = BULLET_SPLIT_ANGLE * Math.PI / 180;
+        const leftDirection = directionAngle - splitAngle;
+        const rightDirection = directionAngle + splitAngle;
+        shoot(bullet.pos.clone(), vec2(Math.cos(leftDirection), Math.sin(leftDirection)), false);
+        shoot(bullet.pos.clone(), vec2(Math.cos(rightDirection), Math.sin(rightDirection)), false);
+        destroy(bullet);
+      }
+
+      if (
+        bullet.pos.x < -20 || bullet.pos.x > width() + 20 ||
+        bullet.pos.y < -20 || bullet.pos.y > height() + 20
+      ) {
+        destroy(bullet);
+        return;
+      }
+
+      const killEnemy = (e) => {
+        dropXP(e.pos.x, e.pos.y);
+        destroy(e);
+        destroy(bullet);
+        score++;
+        scoreLabel.text = `Score: ${score}`;
+      }
+
+      for (const e of get("enemy")) {
+        if (bullet.pos.dist(e.pos) < BULLET_RADIUS + ENEMY_RADIUS) {
+          if (settings.explosiveBullets && Math.random() <= 0.25) {
+            circleEffect(bullet.pos, EXPLOSION_RADIUS, 1, BULLET_COLOR)
+            for (const e of get("enemy")) {
+              if (bullet.pos.dist(e.pos) < EXPLOSION_RADIUS + ENEMY_RADIUS) {
+                killEnemy(e);
+              }
+            }
+          }
+          killEnemy(e);
+          break;
+        }
+      }
+    });
+  }
+
   function shootAt(target) {
     const dir = target.pos.sub(player.pos).unit();
     const baseAngle = Math.atan2(dir.y, dir.x);
@@ -266,49 +336,7 @@ scene("game", () => {
     for (let i = 0; i < settings.projectileCount; i++) {
       const spread = (i - (settings.projectileCount - 1) / 2) * (Math.PI / 18);
       const bulletDir = vec2(Math.cos(baseAngle + spread), Math.sin(baseAngle + spread));
-      const bullet = add([
-        circle(BULLET_RADIUS),
-        pos(player.pos.clone()),
-        anchor("center"),
-        color(BULLET_COLOR),
-        "bullet",
-      ]);
-
-      bullet.onUpdate(() => {
-        if (paused) return;
-        bullet.move(bulletDir.scale(settings.projectileSpeed));
-
-        if (
-          bullet.pos.x < -20 || bullet.pos.x > width() + 20 ||
-          bullet.pos.y < -20 || bullet.pos.y > height() + 20
-        ) {
-          destroy(bullet);
-          return;
-        }
-
-        const killEnemy = (e) => {
-          dropXP(e.pos.x, e.pos.y);
-          destroy(e);
-          destroy(bullet);
-          score++;
-          scoreLabel.text = `Score: ${score}`;
-        }
-
-        for (const e of get("enemy")) {
-          if (bullet.pos.dist(e.pos) < BULLET_RADIUS + ENEMY_RADIUS) {
-            if (settings.explosiveBullets && Math.random() <= 0.25) {
-              circleEffect(bullet.pos, EXPLOSION_RADIUS, 1, BULLET_COLOR)
-              for (const e of get("enemy")) {
-                if (bullet.pos.dist(e.pos) < EXPLOSION_RADIUS + ENEMY_RADIUS) {
-                  killEnemy(e);
-                }
-              }
-            }
-            killEnemy(e);
-            break;
-          }
-        }
-      });
+      shoot(player.pos.clone(), bulletDir, settings.bulletSplit);
     }
   }
 
@@ -352,9 +380,17 @@ scene("game", () => {
     nextPlayerLevelXP = FIRST_PLAYER_LEVEL_XP + PLAYER_LEVEL_XP_SCALING_FACTOR ** playerLevel;
     levelUpUpgrades = [];
     const availableUpgrades = [...upgrades];
-    if (settings.explosiveBullets) { // Remove explosion upgrade if already bought
-      const eBIndex = availableUpgrades.findIndex(u => u.name === "Bullet Explosion");
+
+    // Remove upgrades that can only be bought once
+    const removeUpgrade = (name) => {
+      const eBIndex = availableUpgrades.findIndex(u => u.name === name);
       if (eBIndex !== -1) availableUpgrades.splice(eBIndex, 1);
+    }
+    if (settings.explosiveBullets) {
+      removeUpgrade("Explosive Bullets")
+    }
+    if (settings.bulletSplit) {
+      removeUpgrade("Split Bullets")
     }
     while (levelUpUpgrades.length < 3 && availableUpgrades.length > 0) {
       const index = randi(availableUpgrades.length);
