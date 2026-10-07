@@ -21,12 +21,27 @@ const settings = {
   projectileCount: 1,
   healthRegen: 0,
   xp_collection_radius: 250,
+  explosiveBullets: false,
+  bulletSplit: false,
 };
+
+let upgrades = [
+  { name: "Projectile Speed", description: "Bullets travel 25% faster.", apply: () => { settings.projectileSpeed *= 1.25; } },
+  { name: "Projectile Count", description: "Fire one additional bullet.", apply: () => { settings.projectileCount++; } },
+  { name: "Player Speed", description: "Move 15% faster.", apply: () => { settings.playerSpeed *= 1.15; } },
+  { name: "Attack Speed", description: "Fire 20% more often.", apply: () => { settings.fireInterval /= 1.2; } },
+  { name: "Health Regen", description: "Regenerate health each second.", apply: () => { settings.healthRegen++; } },
+  { name: "XP Collection Radius", description: "Increase the radius at which XP is collected.", apply: () => { settings.xp_collection_radius += 50; } },
+  { name: "Explosive Bullets", description: "25% change of bullet exploding on impact, damaging nearby enemies.", apply: () => { settings.explosiveBullets = true; } },
+  { name: "Split Bullets", description: "Bullets split in two after a distance.", apply: () => { settings.bulletSplit = true; } },
+];
 
 // Display constants
 const PLAYER_RADIUS = 16;
 const ENEMY_RADIUS = 14;
 const BULLET_RADIUS = 4;
+const ENEMY_COLOR = [255, 50, 50];
+const BULLET_COLOR = [255, 220, 0];
 const XP_RADIUS = 3;
 const UPGRADE_CARD_WIDTH = 190;
 const UPGRADE_CARD_HEIGHT = 190;
@@ -46,6 +61,11 @@ const XP_SPEED_SCALING_FACTOR = 5;
 const FIRST_PLAYER_LEVEL_XP = 10;
 const PLAYER_LEVEL_XP_SCALING_FACTOR = 3;
 const LEVEL_TEXT_POS = vec2(16, 16 + 20 + 16 + 20 + 4)
+
+// Upgrades constants
+const BULLET_SPLIT_DISTANCE = 15000;
+const BULLET_SPLIT_ANGLE = 7.5;
+const EXPLOSION_RADIUS = 50;
 
 // pause the game as long as an overlay exists
 let paused = true;
@@ -239,7 +259,7 @@ scene("game", () => {
       circle(ENEMY_RADIUS),
       pos(p),
       anchor("center"),
-      color(255, 50, 50),
+      color(ENEMY_COLOR),
       "enemy",
     ]);
 
@@ -285,6 +305,69 @@ scene("game", () => {
     return best;
   }
 
+  function shoot(position, direction, split) {
+    const bullet = add([
+      circle(BULLET_RADIUS),
+      pos(position),
+      anchor("center"),
+      color(BULLET_COLOR),
+      "bullet",
+      {
+        distanceTraveled: 0,
+      }
+    ]);
+
+    bullet.onUpdate(() => {
+      if (paused) return;
+
+      const moveVector = direction.scale(settings.projectileSpeed);
+      const moveDistance = Math.sqrt(moveVector.x ** 2 + moveVector.y ** 2);
+      bullet.distanceTraveled += moveDistance;
+      bullet.move(moveVector);
+
+      if (split && bullet.distanceTraveled >= BULLET_SPLIT_DISTANCE) {
+        const directionAngle = Math.atan2(direction.y, direction.x);
+        const splitAngle = BULLET_SPLIT_ANGLE * Math.PI / 180;
+        const leftDirection = directionAngle - splitAngle;
+        const rightDirection = directionAngle + splitAngle;
+        shoot(bullet.pos.clone(), vec2(Math.cos(leftDirection), Math.sin(leftDirection)), false);
+        shoot(bullet.pos.clone(), vec2(Math.cos(rightDirection), Math.sin(rightDirection)), false);
+        destroy(bullet);
+      }
+
+      if (
+        bullet.pos.x < -20 || bullet.pos.x > width() + 20 ||
+        bullet.pos.y < -20 || bullet.pos.y > height() + 20
+      ) {
+        destroy(bullet);
+        return;
+      }
+
+      const killEnemy = (e) => {
+        dropXP(e.pos.x, e.pos.y);
+        destroy(e);
+        destroy(bullet);
+        score++;
+        scoreLabel.text = `Score: ${score}`;
+      }
+
+      for (const e of get("enemy")) {
+        if (bullet.pos.dist(e.pos) < BULLET_RADIUS + ENEMY_RADIUS) {
+          if (settings.explosiveBullets && Math.random() <= 0.25) {
+            circleEffect(bullet.pos, EXPLOSION_RADIUS, 1, BULLET_COLOR)
+            for (const e of get("enemy")) {
+              if (bullet.pos.dist(e.pos) < EXPLOSION_RADIUS + ENEMY_RADIUS) {
+                killEnemy(e);
+              }
+            }
+          }
+          killEnemy(e);
+          break;
+        }
+      }
+    });
+  }
+
   function shootAt(target) {
     const dir = target.pos.sub(player.pos).unit();
     const baseAngle = Math.atan2(dir.y, dir.x);
@@ -292,37 +375,7 @@ scene("game", () => {
     for (let i = 0; i < settings.projectileCount; i++) {
       const spread = (i - (settings.projectileCount - 1) / 2) * (Math.PI / 18);
       const bulletDir = vec2(Math.cos(baseAngle + spread), Math.sin(baseAngle + spread));
-      const bullet = add([
-        circle(BULLET_RADIUS),
-        pos(player.pos.clone()),
-        anchor("center"),
-        color(255, 220, 0),
-        "bullet",
-      ]);
-
-      bullet.onUpdate(() => {
-        if (paused) return;
-        bullet.move(bulletDir.scale(settings.projectileSpeed));
-
-        if (
-          bullet.pos.x < -20 || bullet.pos.x > width() + 20 ||
-          bullet.pos.y < -20 || bullet.pos.y > height() + 20
-        ) {
-          destroy(bullet);
-          return;
-        }
-
-        for (const e of get("enemy")) {
-          if (bullet.pos.dist(e.pos) < BULLET_RADIUS + ENEMY_RADIUS) {
-            dropXP(e.pos.x, e.pos.y);
-            destroy(e);
-            destroy(bullet);
-            score++;
-            scoreLabel.text = `Score: ${score}`;
-            break;
-          }
-        }
-      });
+      shoot(player.pos.clone(), bulletDir, settings.bulletSplit);
     }
   }
 
@@ -364,23 +417,28 @@ scene("game", () => {
   function levelUpPlayer() {
     playerLevel++;
     nextPlayerLevelXP = FIRST_PLAYER_LEVEL_XP + PLAYER_LEVEL_XP_SCALING_FACTOR ** playerLevel;
-    const upgrades = [
-      { name: "Projectile Speed", description: "Bullets travel 25% faster.", apply: () => { settings.projectileSpeed *= 1.25; } },
-      { name: "Projectile Count", description: "Fire one additional bullet.", apply: () => { settings.projectileCount++; } },
-      { name: "Player Speed", description: "Move 15% faster.", apply: () => { settings.playerSpeed *= 1.15; } },
-      { name: "Attack Speed", description: "Fire 20% more often.", apply: () => { settings.fireInterval /= 1.2; } },
-      { name: "Health Regen", description: "Regenerate health each second.", apply: () => { settings.healthRegen++; } },
-      { name: "XP Collection Radius", description: "Increase the radius at which XP is collected.", apply: () => { settings.xp_collection_radius += 50; } }
-    ];
     levelUpUpgrades = [];
-    while (levelUpUpgrades.length < 3) {
-      const index = randi(upgrades.length);
-      levelUpUpgrades.push(upgrades.splice(index, 1)[0]);
+    const availableUpgrades = [...upgrades];
+
+    // Remove upgrades that can only be bought once
+    const removeUpgrade = (name) => {
+      const eBIndex = availableUpgrades.findIndex(u => u.name === name);
+      if (eBIndex !== -1) availableUpgrades.splice(eBIndex, 1);
+    }
+    if (settings.explosiveBullets) {
+      removeUpgrade("Explosive Bullets")
+    }
+    if (settings.bulletSplit) {
+      removeUpgrade("Split Bullets")
+    }
+    while (levelUpUpgrades.length < 3 && availableUpgrades.length > 0) {
+      const index = randi(availableUpgrades.length);
+      levelUpUpgrades.push(availableUpgrades.splice(index, 1)[0]);
     }
     levelUpPending = true;
     paused = true;
     const levelTextPos = vec2(LEVEL_TEXT_POS.x + 47.5, LEVEL_TEXT_POS.y + 5);
-    circleEffect(levelTextPos);
+    circleEffect(levelTextPos, 40, 2, XP_COLOR);
   }
 
   onMousePress((button) => {
@@ -406,9 +464,7 @@ scene("game", () => {
     }
   });
 
-  function circleEffect(position) {
-    const NUM_PLAYS = 2;
-    const END_RADIUS = 40;
+  function circleEffect(position, radius, times, color) {
     const ANIMATION_LENGTH = 0.6;
     const ANIMATION_LENGTH_INCREMENT = 0.05;
 
@@ -416,16 +472,16 @@ scene("game", () => {
       const circleAnimation = add([
         pos(position),
         circle(2, { fill: false }),
-        outline(2, new Color(255, 255, 255)),
+        outline(2, new Color(...color)),
         anchor("center"),
         timer(),
       ]);
       circleAnimation
-        .tween(1, END_RADIUS, ANIMATION_LENGTH + animationLengthAddition, (radius) => { circleAnimation.radius = radius }, easings.easeOutQuad)
+        .tween(1, radius, ANIMATION_LENGTH + animationLengthAddition, (radius) => { circleAnimation.radius = radius }, easings.easeOutQuad)
         .onEnd(() => circleAnimation.destroy());
     };
 
-    for (let i = 0; i < NUM_PLAYS; i++) {
+    for (let i = 0; i < times; i++) {
       if (i == 0) {
         play(0);
       } else {
