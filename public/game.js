@@ -25,6 +25,8 @@ const settings = {
   bulletSplit: false,
 };
 
+const defaultSettings = { ...settings };
+
 let upgrades = [
   { name: "Projectile Speed", description: "Bullets travel 25% faster.", apply: () => { settings.projectileSpeed *= 1.25; } },
   { name: "Projectile Count", description: "Fire one additional bullet.", apply: () => { settings.projectileCount++; } },
@@ -70,10 +72,10 @@ const EXPLOSION_RADIUS = 50;
 // Boss constants
 const BOSS_NAME = "Skull Emoji";
 const BOSS_RADIUS = 40;
-const BOSS_MAX_HP = 60;
+const BOSS_MAX_HP = 200;
 const BOSS_DAMAGE_PER_HIT = 2;
 const BOSS_SPEED = 50;
-const BOSS_SPAWN_TIME = 20; // seconds into the game
+const BOSS_SPAWN_TIME = 60; // seconds into the game
 const BOSS_FADE_IN_TIME = 2;
 
 const BOSS_PROJECTILE_INTERVAL = 5;
@@ -239,6 +241,8 @@ async function submitScore(finalScore) {
 }
 
 scene("game", () => {
+  Object.assign(settings, defaultSettings);
+
   let hp = MAX_HP;
   let alive = true;
   let spawnTimer = 0;
@@ -277,16 +281,24 @@ scene("game", () => {
   let laserAlpha = 0;
   let laserSolid = false;
   let laserShotsRemaining = 0;
+  let laserShotElapsed = 0;
 
   let safeStation = null;
   let stationChargeTime = 0;
   let immunityCircle = null;
+  let shockwaveRing = null;
+  let shockwaveElapsed = 0;
+  let shockwaveActive = false;
 
   // Shared death/score handling, used whether the player dies to a normal
   // enemy or to a boss attack, so a score always gets submitted exactly once.
   async function endRun() {
     if (submittingScore) return;
     submittingScore = true;
+
+    Object.assign(settings, defaultSettings);
+    levelUpUpgrades = [];
+    levelUpPending = false;
 
     await submitScore(score);
 
@@ -710,6 +722,9 @@ scene("game", () => {
     for (const p of get("bossProjectile")) destroy(p);
     laserActive = false;
     laserShotsRemaining = 0;
+    shockwaveActive = false;
+    if (shockwaveRing && shockwaveRing.exists()) destroy(shockwaveRing);
+    shockwaveRing = null;
   }
 
   function fireBossProjectile() {
@@ -721,10 +736,16 @@ scene("game", () => {
       layer("sprites"),
       "bossProjectile",
     ]);
+    let lifetime = 0;
 
     proj.onUpdate(() => {
       if (paused || !proj.exists()) return;
       if (!alive) return;
+      lifetime += dt();
+      if (lifetime >= BOSS_PROJECTILE_LIFETIME) {
+        destroy(proj);
+        return;
+      }
       const dir = player.pos.sub(proj.pos).unit();
       proj.move(dir.scale(BOSS_PROJECTILE_SPEED));
 
@@ -732,10 +753,6 @@ scene("game", () => {
         hurtPlayer();
         destroy(proj);
       }
-    });
-
-    wait(BOSS_PROJECTILE_LIFETIME, () => {
-      if (proj.exists()) destroy(proj);
     });
   }
 
@@ -749,50 +766,29 @@ scene("game", () => {
 
   function castLaserShot() {
     if (!bossAlive) return;
+    laserShotElapsed = 0;
     laserOrigin = boss.pos.clone();
     laserDir = player.pos.sub(boss.pos).unit();
     laserActive = true;
     laserSolid = false;
     laserAlpha = 0.15;
-
-    wait(BOSS_LASER_CHARGE_TIME, () => {
-      if (!bossAlive || !laserActive) return;
-      laserSolid = true;
-    });
-
-    wait(BOSS_LASER_CHARGE_TIME + BOSS_LASER_SOLID_DURATION, () => {
-      laserActive = false;
-      if (!bossAlive) return;
-      if (laserShotsRemaining > 0) {
-        laserShotsRemaining--;
-        castLaserShot();
-      } else {
-        bossBusy = false;
-      }
-    });
   }
 
   function startShockwaveCharge() {
     bossBusy = true;
     stationChargeTime = 0;
+    shockwaveElapsed = 0;
+    shockwaveActive = true;
 
     // Telegraphed instant kill shockwave
-    const ring = add([
+    shockwaveRing = add([
       pos(boss.pos.clone()),
       circle(4, { fill: false }),
       outline(4, new Color(255, 255, 255)),
       anchor("center"),
-      timer(),
       layer("sprites"),
       "shockwaveRing",
     ]);
-    ring.tween(
-      4,
-      BOSS_SHOCKWAVE_RING_MAX_RADIUS,
-      BOSS_SHOCKWAVE_CHARGE_TIME,
-      (r) => { ring.radius = r; },
-      easings.linear
-    ).onEnd(() => { if (ring.exists()) destroy(ring); });
 
     // Charging station near a random corner
     const corners = [
@@ -837,13 +833,13 @@ scene("game", () => {
       immunityCircle.radius = Math.max(1, BOSS_SAFE_ZONE_FINAL_RADIUS * frac);
       immunityCircle.opacity = 0.5 * frac;
     });
-
-    wait(BOSS_SHOCKWAVE_CHARGE_TIME, () => {
-      resolveShockwave();
-    });
   }
 
   function resolveShockwave() {
+    shockwaveActive = false;
+    if (shockwaveRing && shockwaveRing.exists()) destroy(shockwaveRing);
+    shockwaveRing = null;
+
     const survived =
       stationChargeTime >= BOSS_SAFE_ZONE_CHARGE_TIME &&
       immunityCircle &&
@@ -900,9 +896,13 @@ scene("game", () => {
     }
 
     if (laserActive) {
+      laserShotElapsed += dt();
       if (!laserSolid) {
-        laserAlpha = Math.min(1, laserAlpha + dt() / BOSS_LASER_CHARGE_TIME);
-      } else {
+        laserAlpha = Math.min(1, 0.15 + laserShotElapsed / BOSS_LASER_CHARGE_TIME);
+        if (laserShotElapsed >= BOSS_LASER_CHARGE_TIME) laserSolid = true;
+      }
+
+      if (laserSolid) {
         laserAlpha = 1;
         if (alive) {
           const d = pointSegmentDistance(player.pos, laserOrigin, laserDir, laserLength);
@@ -910,6 +910,27 @@ scene("game", () => {
             killPlayer();
           }
         }
+      }
+
+      if (laserShotElapsed >= BOSS_LASER_CHARGE_TIME + BOSS_LASER_SOLID_DURATION) {
+        laserActive = false;
+        if (laserShotsRemaining > 0) {
+          laserShotsRemaining--;
+          castLaserShot();
+        } else {
+          bossBusy = false;
+        }
+      }
+    }
+
+    if (shockwaveActive) {
+      shockwaveElapsed += dt();
+      if (shockwaveRing && shockwaveRing.exists()) {
+        const progress = Math.min(1, shockwaveElapsed / BOSS_SHOCKWAVE_CHARGE_TIME);
+        shockwaveRing.radius = 4 + (BOSS_SHOCKWAVE_RING_MAX_RADIUS - 4) * progress;
+      }
+      if (shockwaveElapsed >= BOSS_SHOCKWAVE_CHARGE_TIME) {
+        resolveShockwave();
       }
     }
   });
