@@ -97,6 +97,9 @@ const BOSS_SAFE_ZONE_CHARGE_TIME = 8;
 const BOSS_SAFE_ZONE_FINAL_RADIUS = 60;
 const BOSS_SAFE_ZONE_MARGIN = 90; // distance from each corner
 
+// Define rendering layers
+setLayers(["background", "sprites", "statuses", "menus"], "sprites");
+
 // load player sprite
 loadSprite("player", [
   "art/player/l0_sprite_player1.png",
@@ -302,10 +305,16 @@ scene("game", () => {
 
   // Player
   const player = add([
-    sprite("player", { anim: "idle" }),
     pos(center()),
     anchor("center"),
     scale(3),
+    layer("sprites"),
+  ]);
+  const playerSprite = player.add([
+    sprite("player", { anim: "idle", width: PLAYER_RADIUS }),
+    pos(0.25, -5),
+    anchor("center"),
+    scale(1.3),
   ]);
 
   // Player movement with WASD or arrow keys
@@ -369,6 +378,7 @@ scene("game", () => {
     pos(width() - 20, 16),
     anchor("topright"),
     color(255, 255, 255),
+    layer("statuses"),
   ]);
 
   // Enemies
@@ -382,11 +392,17 @@ scene("game", () => {
     else p = vec2(-margin, rand(0, height()));
 
     const enemy = add([
-      sprite("enemy", { anim: "walk" }),
       pos(p),
       anchor("center"),
       scale(3),
       "enemy",
+      layer("sprites"),
+    ]);
+    const enemySprite = enemy.add([
+      sprite("enemy", { anim: "walk", width: ENEMY_RADIUS }),
+      pos(0.25, -5),
+      anchor("center"),
+      scale(1.3),
     ]);
 
     enemy.onUpdate(() => {
@@ -452,6 +468,7 @@ scene("game", () => {
       pos(position),
       anchor("center"),
       color(BULLET_COLOR),
+      layer("sprites"),
       "bullet",
       {
         distanceTraveled: 0,
@@ -527,6 +544,7 @@ scene("game", () => {
       pos(xPos, yPos),
       anchor("center"),
       scale(1.5),
+      layer("sprites"),
       "xp",
     ]);
 
@@ -616,6 +634,7 @@ scene("game", () => {
         outline(2, new Color(...color)),
         anchor("center"),
         timer(),
+        layer("statuses"),
       ]);
       circleAnimation
         .tween(1, radius, ANIMATION_LENGTH + animationLengthAddition, (radius) => { circleAnimation.radius = radius }, easings.easeOutQuad)
@@ -649,6 +668,7 @@ scene("game", () => {
       anchor("center"),
       color(255, 255, 255),
       opacity(0),
+      layer("sprites"),
       "boss",
     ]);
 
@@ -698,6 +718,7 @@ scene("game", () => {
       pos(boss.pos.clone()),
       anchor("center"),
       color(200, 80, 220),
+      layer("sprites"),
       "bossProjectile",
     ]);
 
@@ -762,6 +783,7 @@ scene("game", () => {
       outline(4, new Color(255, 255, 255)),
       anchor("center"),
       timer(),
+      layer("sprites"),
       "shockwaveRing",
     ]);
     ring.tween(
@@ -786,6 +808,7 @@ scene("game", () => {
       circle(BOSS_SAFE_ZONE_RADIUS, { fill: false }),
       outline(4, new Color(255, 20, 147)),
       anchor("center"),
+      layer("sprites"),
       "safeStation",
     ]);
 
@@ -803,6 +826,7 @@ scene("game", () => {
       color(255, 105, 180),
       opacity(0),
       anchor("center"),
+      layer("sprites"),
       "immunityCircle",
     ]);
 
@@ -901,7 +925,29 @@ scene("game", () => {
     }
   });
 
-  onDraw(() => {
+  const spritesLayerController = add([
+    layer("sprites"),
+  ]);
+
+  spritesLayerController.onDraw(() => {
+    // laser beam ability
+    if (laserActive) {
+      const endPoint = laserOrigin.add(laserDir.scale(laserLength));
+      drawLine({
+        p1: laserOrigin,
+        p2: endPoint,
+        width: BOSS_LASER_WIDTH,
+        color: laserSolid ? rgb(255, 0, 0) : rgb(255, 130, 130),
+        opacity: laserAlpha,
+      });
+    }
+  })
+
+  const statusesLayerController = add([
+    layer("statuses"),
+  ]);
+
+  statusesLayerController.onDraw(() => {
     // UI for health bar
     const healthBarWidth = 160;
     drawRect({
@@ -968,19 +1014,13 @@ scene("game", () => {
         opacity: bossUiAlpha,
       });
     }
+  });
 
-    // laser beam ability
-    if (laserActive) {
-      const endPoint = laserOrigin.add(laserDir.scale(laserLength));
-      drawLine({
-        p1: laserOrigin,
-        p2: endPoint,
-        width: BOSS_LASER_WIDTH,
-        color: laserSolid ? rgb(255, 0, 0) : rgb(255, 130, 130),
-        opacity: laserAlpha,
-      });
-    }
+  const menusLayerController = add([
+    layer("menus"),
+  ]);
 
+  menusLayerController.onDraw(() => {
     // level up upgrade selection screen
     if (levelUpPending) {
       drawRect({
@@ -1015,6 +1055,7 @@ scene("game", () => {
         drawText({
           text: levelUpUpgrades[i].name,
           size: 18,
+          width: UPGRADE_CARD_WIDTH - 24,
           pos: vec2(cardX + UPGRADE_CARD_WIDTH / 2, cardY + 42),
           anchor: "center",
           color: rgb(255, 255, 255),
