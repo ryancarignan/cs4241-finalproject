@@ -71,9 +71,9 @@ const EXPLOSION_RADIUS = 50;
 const BOSS_NAME = "Skull Emoji";
 const BOSS_RADIUS = 40;
 const BOSS_MAX_HP = 60;
-const BOSS_DAMAGE_PER_HIT = 1;
+const BOSS_DAMAGE_PER_HIT = 2;
 const BOSS_SPEED = 50;
-const BOSS_SPAWN_TIME = 5; // seconds into the game
+const BOSS_SPAWN_TIME = 20; // seconds into the game
 const BOSS_FADE_IN_TIME = 2;
 
 const BOSS_PROJECTILE_INTERVAL = 5;
