@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vampire Survivors Game - Login & Leaderboard</title>
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            background: #0e0c1a;
+            overflow: hidden;
+            font-family: system-ui, -apple-system, sans-serif;
+            color: #fff;
+        }
+
+        .overlay {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 10;
+        }
+
+        .overlay.hidden {
+            display: none;
+        }
+
+        .panel {
+            background: #1a1826;
+            color: #fff;
+            padding: 32px 40px;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 420px;
+            text-align: center;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
+            border: 1px solid #2a273f;
+        }
+
+        .panel h1, .panel h2 {
+            margin-top: 0;
+            color: #4c78ff;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+            text-align: left;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 14px;
+            margin-bottom: 6px;
+            color: #aaa;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 6px;
+            border: 1px solid #3a3756;
+            background: #0e0c1a;
+            color: #fff;
+            font-size: 15px;
+            box-sizing: border-box;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #4c78ff;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 6px;
+            background: #4c78ff;
+            color: #fff;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background: #6c8fff;
+        }
+
+        .btn-secondary {
+            background: #3a3756;
+            margin-top: 8px;
+        }
+
+        .btn-secondary:hover {
+            background: #4a4766;
+        }
+
+        .error-msg {
+            color: #ff5555;
+            font-size: 14px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .leaderboard-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 14px;
+        }
+
+        .leaderboard-table th, .leaderboard-table td {
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid #2a273f;
+        }
+
+        .leaderboard-table th {
+            color: #888;
+            font-weight: 600;
+        }
+
+        .leaderboard-table td:nth-child(3) {
+            text-align: right;
+            color: #00ff66;
+            font-weight: bold;
+        }
+
+        #user-display {
+            font-size: 15px;
+            color: #aaa;
+            margin-bottom: 12px;
+        }
+
+        #user-display span {
+            color: #fff;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div id="auth-overlay" class="overlay">
+    <div class="panel">
+        <h1>Vampire Survivors</h1>
+        <p style="color: #aaa; font-size: 14px; margin-bottom: 20px;">
+            Log in or enter new credentials to automatically create an account.
+        </p>
+
+        <form id="auth-form">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" required autocomplete="username" />
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" required autocomplete="current-password" />
+            </div>
+
+            <button type="submit" class="btn">Log In / Register</button>
+            <div id="auth-error" class="error-msg"></div>
+        </form>
+    </div>
+</div>
+
+<div id="dashboard-overlay" class="overlay hidden">
+    <div class="panel">
+        <h2>Top Scores</h2>
+        <div id="user-display">Logged in as: <span id="current-username"></span></div>
+
+        <table class="leaderboard-table">
+            <thead>
+            <tr>
+                <th>#</th>
+                <th>Player</th>
+                <th style="text-align: right;">Score</th>
+            </tr>
+            </thead>
+            <tbody id="leaderboard-body">
+            <tr><td colspan="3" style="text-align:center; color:#888;">Loading...</td></tr>
+            </tbody>
+        </table>
+
+        <button id="start-game-btn" class="btn">Start Game</button>
+        <button id="logout-btn" class="btn btn-secondary">Log Out</button>
+    </div>
+</div>
+
+<div id="intro-overlay" class="overlay hidden">
+    <div class="panel">
+        <h1>Auto-Shooter</h1>
+        <p>Movement: <b>WASD</b> or <b>Arrow Keys</b></p>
+        <p>Your character fires automatically at the nearest enemy.</p>
+        <p>Enemies spawn faster the longer you survive. You can take up to 4 hits before you die.</p>
+        <p>Press <b>Esc</b> anytime to pause and adjust settings.</p>
+        <p>If you can't move, click the screen with any mouse button!</p>
+        <button id="start-btn" class="btn">Start</button>
+        <button id="back-to-dashboard-btn" class="btn btn-secondary">Back to Leaderboard</button>
+    </div>
+</div>
+
+<div id="pause-overlay" class="overlay hidden">
+    <div class="panel">
+        <h2>Paused</h2>
+        <div id="settings-container"></div>
+        <button id="resume-btn" class="btn">Resume</button>
+    </div>
+</div>
+
+<script type="module" src="game.js"></script>
+
+<script>
+    const authOverlay = document.getElementById("auth-overlay");
+    const dashboardOverlay = document.getElementById("dashboard-overlay");
+    const introOverlay = document.getElementById("intro-overlay");
+
+    const authForm = document.getElementById("auth-form");
+    const authError = document.getElementById("auth-error");
+    const currentUsernameSpan = document.getElementById("current-username");
+    const leaderboardBody = document.getElementById("leaderboard-body");
+
+    const startGameBtn = document.getElementById("start-game-btn");
+    const logoutBtn = document.getElementById("logout-btn");
+    const backToDashboardBtn = document.getElementById("back-to-dashboard-btn");
+
+
+    async function checkSession() {
+        try {
+            const res = await fetch("/api/user");
+            const data = await res.json();
+            if (data.loggedIn) {
+                showDashboard(data.username);
+            } else {
+                showAuth();
+            }
+        } catch (err) {
+            console.error("Session check error:", err);
+            showAuth();
+        }
+    }
+
+    function showAuth() {
+        authOverlay.classList.remove("hidden");
+        dashboardOverlay.classList.add("hidden");
+        introOverlay.classList.add("hidden");
+    }
+
+    async function showDashboard(username) {
+        currentUsernameSpan.textContent = username;
+        authOverlay.classList.add("hidden");
+        introOverlay.classList.add("hidden");
+        dashboardOverlay.classList.remove("hidden");
+        await loadLeaderboard();
+    }
+
+    async function loadLeaderboard() {
+        try {
+            const res = await fetch("/api/leaderboard");
+            const scores = await res.json();
+            leaderboardBody.innerHTML = "";
+
+            if (scores.length === 0) {
+                leaderboardBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:#888;">No scores yet.</td></tr>`;
+                return;
+            }
+
+            scores.forEach((entry, index) => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+              <td>${index + 1}</td>
+              <td>${entry.username}</td>
+              <td style="text-align:right; color:#00ff66; font-weight:bold;">${entry.score}</td>
+            `;
+                leaderboardBody.appendChild(tr);
+            });
+        } catch (err) {
+            console.error("Failed to load leaderboard:", err);
+            leaderboardBody.innerHTML = `<tr><td colspan="3" style="text-align:center; color:#ff5555;">Error loading leaderboard.</td></tr>`;
+        }
+    }
+
+    authForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        authError.style.display = "none";
+
+        const username = document.getElementById("username").value.trim();
+        const password = document.getElementById("password").value;
+
+        try {
+            const res = await fetch("/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, password })
+            });
+
+            const data = await res.json();
+
+            if (res.ok && data.success) {
+                showDashboard(data.username);
+            } else {
+                authError.textContent = data.error || "Login failed.";
+                authError.style.display = "block";
+            }
+        } catch (err) {
+            console.error("Login request error:", err);
+            authError.textContent = "Network error. Please try again.";
+            authError.style.display = "block";
+        }
+    });
+
+    logoutBtn.addEventListener("click", async () => {
+        try {
+            await fetch("/logout", { method: "POST" });
+            showAuth();
+        } catch (err) {
+            console.error("Logout error:", err);
+        }
+    });
+
+    startGameBtn.addEventListener("click", () => {
+        dashboardOverlay.classList.add("hidden");
+        introOverlay.classList.remove("hidden");
+    });
+
+
+    backToDashboardBtn.addEventListener("click", () => {
+        introOverlay.classList.add("hidden");
+        dashboardOverlay.classList.remove("hidden");
+    });
+
+    checkSession();
+
+    window.showDashboard = showDashboard;
+</script>
+</body>
+</html>
