@@ -40,12 +40,12 @@ let upgrades = [
 const PLAYER_RADIUS = 16;
 const ENEMY_RADIUS = 14;
 const BULLET_RADIUS = 4;
-const ENEMY_COLOR = [255, 50, 50];
 const BULLET_COLOR = [255, 220, 0];
 const XP_RADIUS = 3;
+const BULLET_SPEED = 600;
+const XP_COLOR = [44, 239, 242];
 const UPGRADE_CARD_WIDTH = 190;
 const UPGRADE_CARD_HEIGHT = 190;
-const XP_COLOR = [247, 174, 248];
 const BAR_COLOR = [69, 69, 75];
 
 const MAX_HP = 4;
@@ -66,6 +66,91 @@ const LEVEL_TEXT_POS = vec2(16, 16 + 20 + 16 + 20 + 4)
 const BULLET_SPLIT_DISTANCE = 15000;
 const BULLET_SPLIT_ANGLE = 7.5;
 const EXPLOSION_RADIUS = 50;
+
+// Boss constants
+const BOSS_NAME = "Skull Emoji";
+const BOSS_RADIUS = 40;
+const BOSS_MAX_HP = 60;
+const BOSS_DAMAGE_PER_HIT = 1;
+const BOSS_SPEED = 50;
+const BOSS_SPAWN_TIME = 5; // seconds into the game
+const BOSS_FADE_IN_TIME = 2;
+
+const BOSS_PROJECTILE_INTERVAL = 5;
+const BOSS_PROJECTILE_SPEED = 180;
+const BOSS_PROJECTILE_LIFETIME = 3;
+const BOSS_PROJECTILE_RADIUS = 6;
+
+const BOSS_LASER_MIN_INTERVAL = 12;
+const BOSS_LASER_MAX_INTERVAL = 15;
+const BOSS_LASER_FOLLOW_UP_SHOTS = 2;
+const BOSS_LASER_CHARGE_TIME = 0.2;      // fades in, no collision
+const BOSS_LASER_SOLID_DURATION = 0.1; // full color, has collision
+const BOSS_LASER_WIDTH = 24;
+
+const BOSS_SHOCKWAVE_HP_THRESHOLD = 0.5;
+const BOSS_SHOCKWAVE_CHARGE_TIME = 15;
+const BOSS_SHOCKWAVE_RING_MAX_RADIUS = 1000;
+
+const BOSS_SAFE_ZONE_RADIUS = 55;
+const BOSS_SAFE_ZONE_CHARGE_TIME = 8;
+const BOSS_SAFE_ZONE_FINAL_RADIUS = 60;
+const BOSS_SAFE_ZONE_MARGIN = 90; // distance from each corner
+
+// load player sprite
+loadSprite("player", [
+  "art/player/l0_sprite_player1.png",
+  "art/player/l0_sprite_player2.png",
+  "art/player/l0_sprite_player3.png",
+  "art/player/l0_sprite_player4.png",
+  "art/player/l0_sprite_player5.png",
+  "art/player/l0_sprite_player6.png",
+  "art/player/l0_sprite_player7.png",
+], {
+  anims: {
+    idle: { from: 0, to: 6, loop: true, speed: 10 },
+  },
+});
+
+// load enemy sprite
+loadSprite("enemy", [
+  "art/enemy/l0_sprite_enemy1.png",
+  "art/enemy/l0_sprite_enemy2.png",
+  "art/enemy/l0_sprite_enemy3.png",
+  "art/enemy/l0_sprite_enemy4.png",
+  "art/enemy/l0_sprite_enemy5.png",
+  "art/enemy/l0_sprite_enemy6.png",
+  "art/enemy/l0_sprite_enemy7.png",
+], {
+  anims: {
+    walk: { from: 0, to: 6, loop: true, speed: 10 },
+  },
+});
+
+// load xp sprite
+loadSprite("xp", [
+  "art/xp/l0_sprite_XP_updated1.png",
+  "art/xp/l0_sprite_XP_updated2.png",
+  "art/xp/l0_sprite_XP_updated3.png",
+  "art/xp/l0_sprite_XP_updated4.png",
+  "art/xp/l0_sprite_XP_updated5.png",
+  "art/xp/l0_sprite_XP_updated6.png",
+  "art/xp/l0_sprite_XP_updated7.png",
+  "art/xp/l0_sprite_XP_updated8.png",
+  "art/xp/l0_sprite_XP_updated9.png",
+], {
+  anims: {
+    spin: { from: 0, to: 8, loop: true, speed: 10 },
+  },
+});
+
+// Simple point-to-segment distance helper, used for the boss laser hitbox
+function pointSegmentDistance(point, origin, dir, length) {
+  const toPoint = point.sub(origin);
+  const t = Math.max(0, Math.min(length, toPoint.dot(dir)));
+  const closest = origin.add(dir.scale(t));
+  return point.dist(closest);
+}
 
 // pause the game as long as an overlay exists
 let paused = true;
@@ -107,7 +192,7 @@ function togglePause() {
   }
 }
 
-// Settings panel (Tweakpane)  
+// Settings panel (Tweakpane)
 try {
   const pane = new Pane({
     container: document.getElementById("settings-container"),
@@ -168,19 +253,65 @@ scene("game", () => {
   let playerLevel = 0;
   let nextPlayerLevelXP = FIRST_PLAYER_LEVEL_XP;
 
+  // Boss state
+  let gameTime = 0;
+  let bossSpawned = false;
+  let bossAlive = false;
+  let boss = null;
+  let bossHp = BOSS_MAX_HP;
+  let bossUiAlpha = 0;
+  let bossBusy = false;
+
+  let bossProjectileTimer = 0;
+  let bossLaserTimer = 0;
+  let bossLaserInterval = rand(BOSS_LASER_MIN_INTERVAL, BOSS_LASER_MAX_INTERVAL);
+  let shockwaveUsed = false;
+
+  let laserActive = false;
+  let laserOrigin = null;
+  let laserDir = null;
+  let laserLength = 1400;
+  let laserAlpha = 0;
+  let laserSolid = false;
+  let laserShotsRemaining = 0;
+
+  let safeStation = null;
+  let stationChargeTime = 0;
+  let immunityCircle = null;
+
+  // Shared death/score handling, used whether the player dies to a normal
+  // enemy or to a boss attack, so a score always gets submitted exactly once.
+  async function endRun() {
+    if (submittingScore) return;
+    submittingScore = true;
+
+    await submitScore(score);
+
+    wait(1.5, async () => {
+      paused = true;
+      if (window.showDashboard) {
+        const res = await fetch("/api/user");
+        const userData = await res.json();
+        if (userData.loggedIn) {
+          window.showDashboard(userData.username);
+        }
+      }
+      go("game");
+    });
+  }
 
   // Player
   const player = add([
-    circle(PLAYER_RADIUS),
+    sprite("player", { anim: "idle" }),
     pos(center()),
     anchor("center"),
-    color(60, 120, 255),
+    scale(3),
   ]);
 
   // Player movement with WASD or arrow keys
   player.onUpdate(() => {
     if (!alive || paused) return;
-    
+
     // Health regen
     if (settings.healthRegen > 0 && hp < MAX_HP) {
       healthRegenTimer += dt();
@@ -207,33 +338,28 @@ scene("game", () => {
     player.pos.y = clamp(player.pos.y, PLAYER_RADIUS, height() - PLAYER_RADIUS);
   });
 
-  async function hurtPlayer() {
+  function hurtPlayer() {
+    if (!alive) return;
     const hurtColors = rgb(165, 35, 35);
     hp--;
     shake(6);
     flash(hurtColors, 0.5);
-    // restart if player dies
     if (hp <= 0) {
       alive = false;
       destroy(player);
-      wait(2, () => go("game"));
-
-      if(!submittingScore){
-        submittingScore = true;
-        await submitScore(score);
-        wait(1.5, async () => {
-          paused = true;
-          if(window.showDashboard){
-            const res = await fetch("/api/user");
-            const userData = await res.json();
-            if(userData.loggedIn){
-              window.showDashboard(userData.username);
-            }
-          }
-          go("game");
-        });
-      }
+      endRun();
     }
+  }
+
+  function killPlayer() {
+    if (!alive) return;
+    const deadColors = rgb(165, 35, 35);
+    alive = false;
+    hp = 0;
+    shake(6);
+    flash(deadColors, 0.5);
+    destroy(player);
+    endRun();
   }
 
   let score = 0;
@@ -256,10 +382,10 @@ scene("game", () => {
     else p = vec2(-margin, rand(0, height()));
 
     const enemy = add([
-      circle(ENEMY_RADIUS),
+      sprite("enemy", { anim: "walk" }),
       pos(p),
       anchor("center"),
-      color(ENEMY_COLOR),
+      scale(3),
       "enemy",
     ]);
 
@@ -302,7 +428,22 @@ scene("game", () => {
         bestDist = d;
       }
     }
+    if (bossAlive && boss) {
+      const d = boss.pos.dist(player.pos);
+      if (d < bestDist) {
+        best = boss;
+        bestDist = d;
+      }
+    }
     return best;
+  }
+
+  function killEnemy(e) {
+    if (!e.exists()) return;
+    dropXP(e.pos.x, e.pos.y);
+    destroy(e);
+    score++;
+    scoreLabel.text = `Score: ${score}`;
   }
 
   function shoot(position, direction, split) {
@@ -318,7 +459,7 @@ scene("game", () => {
     ]);
 
     bullet.onUpdate(() => {
-      if (paused) return;
+      if (paused || !bullet.exists()) return;
 
       const moveVector = direction.scale(settings.projectileSpeed);
       const moveDistance = Math.sqrt(moveVector.x ** 2 + moveVector.y ** 2);
@@ -333,6 +474,7 @@ scene("game", () => {
         shoot(bullet.pos.clone(), vec2(Math.cos(leftDirection), Math.sin(leftDirection)), false);
         shoot(bullet.pos.clone(), vec2(Math.cos(rightDirection), Math.sin(rightDirection)), false);
         destroy(bullet);
+        return;
       }
 
       if (
@@ -343,25 +485,25 @@ scene("game", () => {
         return;
       }
 
-      const killEnemy = (e) => {
-        dropXP(e.pos.x, e.pos.y);
-        destroy(e);
+      if (bossAlive && boss && bullet.pos.dist(boss.pos) < BULLET_RADIUS + BOSS_RADIUS) {
         destroy(bullet);
-        score++;
-        scoreLabel.text = `Score: ${score}`;
+        damageBoss(BOSS_DAMAGE_PER_HIT);
+        return;
       }
 
       for (const e of get("enemy")) {
         if (bullet.pos.dist(e.pos) < BULLET_RADIUS + ENEMY_RADIUS) {
           if (settings.explosiveBullets && Math.random() <= 0.25) {
-            circleEffect(bullet.pos, EXPLOSION_RADIUS, 1, BULLET_COLOR)
-            for (const e of get("enemy")) {
-              if (bullet.pos.dist(e.pos) < EXPLOSION_RADIUS + ENEMY_RADIUS) {
-                killEnemy(e);
+            circleEffect(bullet.pos, EXPLOSION_RADIUS, 1, BULLET_COLOR);
+            for (const e2 of get("enemy")) {
+              if (bullet.pos.dist(e2.pos) < EXPLOSION_RADIUS + ENEMY_RADIUS) {
+                killEnemy(e2);
               }
             }
+          } else {
+            killEnemy(e);
           }
-          killEnemy(e);
+          destroy(bullet);
           break;
         }
       }
@@ -381,10 +523,11 @@ scene("game", () => {
 
   function dropXP(xPos, yPos) {
     const xp = add([
-      circle(XP_RADIUS),
+      sprite("xp", { anim: "spin" }),
       pos(xPos, yPos),
-      color(...XP_COLOR),
-      "xp"
+      anchor("center"),
+      scale(1.5),
+      "xp",
     ]);
 
     xp.onUpdate(() => {
@@ -394,7 +537,7 @@ scene("game", () => {
       const distFromPlayer = xp.pos.dist(player.pos);
 
       const speed = XP_SPEED * (Math.max(0, ((settings.xp_collection_radius - distFromPlayer) * 0.01)) ** XP_SPEED_SCALING_FACTOR);
-      xp.move(dir.scale(Math.max(speed, 0)))
+      xp.move(dir.scale(Math.max(speed, 0)));
 
       if (xp.pos.dist(player.pos) < PLAYER_RADIUS + XP_RADIUS) {
         destroy(xp);
@@ -404,9 +547,7 @@ scene("game", () => {
   }
 
   function incrementPlayerXP() {
-    const xpColors = rgb(124, 252, 0);
     xp++;
-    // restart if player dies
     if (xp >= nextPlayerLevelXP) {
       xp %= nextPlayerLevelXP;
       levelUpPlayer();
@@ -492,6 +633,263 @@ scene("game", () => {
     }
   }
 
+  // Boss
+  function spawnBoss() {
+    bossAlive = true;
+    bossHp = BOSS_MAX_HP;
+    bossUiAlpha = 0;
+    bossBusy = false;
+    bossProjectileTimer = 0;
+    bossLaserTimer = 0;
+    bossLaserInterval = rand(BOSS_LASER_MIN_INTERVAL, BOSS_LASER_MAX_INTERVAL);
+
+    boss = add([
+      circle(BOSS_RADIUS),
+      pos(center()),
+      anchor("center"),
+      color(255, 255, 255),
+      opacity(0),
+      "boss",
+    ]);
+
+    boss.onUpdate(() => {
+      if (!bossAlive || paused) return;
+      boss.opacity = bossUiAlpha;
+
+      if (!bossBusy) {
+        const dir = player.pos.sub(boss.pos).unit();
+        boss.move(dir.scale(BOSS_SPEED));
+        boss.pos.x = clamp(boss.pos.x, BOSS_RADIUS, width() - BOSS_RADIUS);
+        boss.pos.y = clamp(boss.pos.y, BOSS_RADIUS, height() - BOSS_RADIUS);
+      }
+    });
+  }
+
+  function damageBoss(amount) {
+    if (!bossAlive) return;
+    bossHp -= amount;
+
+    if (!shockwaveUsed && bossHp <= BOSS_MAX_HP * BOSS_SHOCKWAVE_HP_THRESHOLD) {
+      shockwaveUsed = true;
+      startShockwaveCharge();
+    }
+
+    if (bossHp <= 0) {
+      bossHp = 0;
+      killBoss();
+    }
+  }
+
+  function killBoss() {
+    bossAlive = false;
+    bossBusy = false;
+    if (boss && boss.exists()) destroy(boss);
+    for (const r of get("shockwaveRing")) destroy(r);
+    if (safeStation && safeStation.exists()) destroy(safeStation);
+    if (immunityCircle && immunityCircle.exists()) destroy(immunityCircle);
+    for (const p of get("bossProjectile")) destroy(p);
+    laserActive = false;
+    laserShotsRemaining = 0;
+  }
+
+  function fireBossProjectile() {
+    const proj = add([
+      circle(BOSS_PROJECTILE_RADIUS),
+      pos(boss.pos.clone()),
+      anchor("center"),
+      color(200, 80, 220),
+      "bossProjectile",
+    ]);
+
+    proj.onUpdate(() => {
+      if (paused || !proj.exists()) return;
+      if (!alive) return;
+      const dir = player.pos.sub(proj.pos).unit();
+      proj.move(dir.scale(BOSS_PROJECTILE_SPEED));
+
+      if (proj.pos.dist(player.pos) < BOSS_PROJECTILE_RADIUS + PLAYER_RADIUS) {
+        hurtPlayer();
+        destroy(proj);
+      }
+    });
+
+    wait(BOSS_PROJECTILE_LIFETIME, () => {
+      if (proj.exists()) destroy(proj);
+    });
+  }
+
+  function startLaserCast() {
+    if (!bossAlive || bossBusy) return;
+    bossBusy = true;
+    laserShotsRemaining = BOSS_LASER_FOLLOW_UP_SHOTS;
+
+    castLaserShot();
+  }
+
+  function castLaserShot() {
+    if (!bossAlive) return;
+    laserOrigin = boss.pos.clone();
+    laserDir = player.pos.sub(boss.pos).unit();
+    laserActive = true;
+    laserSolid = false;
+    laserAlpha = 0.15;
+
+    wait(BOSS_LASER_CHARGE_TIME, () => {
+      if (!bossAlive || !laserActive) return;
+      laserSolid = true;
+    });
+
+    wait(BOSS_LASER_CHARGE_TIME + BOSS_LASER_SOLID_DURATION, () => {
+      laserActive = false;
+      if (!bossAlive) return;
+      if (laserShotsRemaining > 0) {
+        laserShotsRemaining--;
+        castLaserShot();
+      } else {
+        bossBusy = false;
+      }
+    });
+  }
+
+  function startShockwaveCharge() {
+    bossBusy = true;
+    stationChargeTime = 0;
+
+    // Telegraphed instant kill shockwave
+    const ring = add([
+      pos(boss.pos.clone()),
+      circle(4, { fill: false }),
+      outline(4, new Color(255, 255, 255)),
+      anchor("center"),
+      timer(),
+      "shockwaveRing",
+    ]);
+    ring.tween(
+      4,
+      BOSS_SHOCKWAVE_RING_MAX_RADIUS,
+      BOSS_SHOCKWAVE_CHARGE_TIME,
+      (r) => { ring.radius = r; },
+      easings.linear
+    ).onEnd(() => { if (ring.exists()) destroy(ring); });
+
+    // Charging station near a random corner
+    const corners = [
+      vec2(BOSS_SAFE_ZONE_MARGIN, BOSS_SAFE_ZONE_MARGIN),
+      vec2(width() - BOSS_SAFE_ZONE_MARGIN, BOSS_SAFE_ZONE_MARGIN),
+      vec2(BOSS_SAFE_ZONE_MARGIN, height() - BOSS_SAFE_ZONE_MARGIN),
+      vec2(width() - BOSS_SAFE_ZONE_MARGIN, height() - BOSS_SAFE_ZONE_MARGIN),
+    ];
+    const stationPos = corners[randi(corners.length)];
+
+    safeStation = add([
+      pos(stationPos),
+      circle(BOSS_SAFE_ZONE_RADIUS, { fill: false }),
+      outline(4, new Color(255, 20, 147)),
+      anchor("center"),
+      "safeStation",
+    ]);
+
+    safeStation.onUpdate(() => {
+      if (paused || !alive) return;
+      if (player.pos.dist(safeStation.pos) <= BOSS_SAFE_ZONE_RADIUS) {
+        stationChargeTime = Math.min(BOSS_SAFE_ZONE_CHARGE_TIME, stationChargeTime + dt());
+      }
+    });
+
+    // Growing immunity field, centered on the charging station
+    immunityCircle = add([
+      pos(stationPos.clone()),
+      circle(1),
+      color(255, 105, 180),
+      opacity(0),
+      anchor("center"),
+      "immunityCircle",
+    ]);
+
+    immunityCircle.onUpdate(() => {
+      if (paused) return;
+      immunityCircle.pos = stationPos.clone();
+      const frac = Math.min(1, stationChargeTime / BOSS_SAFE_ZONE_CHARGE_TIME);
+      immunityCircle.radius = Math.max(1, BOSS_SAFE_ZONE_FINAL_RADIUS * frac);
+      immunityCircle.opacity = 0.5 * frac;
+    });
+
+    wait(BOSS_SHOCKWAVE_CHARGE_TIME, () => {
+      resolveShockwave();
+    });
+  }
+
+  function resolveShockwave() {
+    const survived =
+      stationChargeTime >= BOSS_SAFE_ZONE_CHARGE_TIME &&
+      immunityCircle &&
+      immunityCircle.exists() &&
+      player.pos.dist(immunityCircle.pos) <= immunityCircle.radius;
+
+    if (safeStation && safeStation.exists()) destroy(safeStation);
+    if (immunityCircle && immunityCircle.exists()) destroy(immunityCircle);
+    safeStation = null;
+    immunityCircle = null;
+
+    if (!survived) {
+      shake(10);
+      killPlayer();
+    } else {
+      shake(10);
+      flash(rgb(255, 255, 255), 0.3);
+    }
+
+    bossBusy = false;
+  }
+
+  // Boss timer functions
+  onUpdate(() => {
+    if (!alive || paused) return;
+
+    gameTime += dt();
+
+    if (!bossSpawned && gameTime >= BOSS_SPAWN_TIME) {
+      bossSpawned = true;
+      spawnBoss();
+    }
+
+    if (!bossAlive) return;
+
+    if (bossUiAlpha < 1) {
+      bossUiAlpha = Math.min(1, bossUiAlpha + dt() / BOSS_FADE_IN_TIME);
+    }
+
+    // boss attacks when not busy
+    if (!bossBusy) {
+      bossProjectileTimer += dt();
+      if (bossProjectileTimer >= BOSS_PROJECTILE_INTERVAL) {
+        bossProjectileTimer = 0;
+        fireBossProjectile();
+      }
+
+      bossLaserTimer += dt();
+      if (bossLaserTimer >= bossLaserInterval) {
+        bossLaserTimer = 0;
+        bossLaserInterval = rand(BOSS_LASER_MIN_INTERVAL, BOSS_LASER_MAX_INTERVAL);
+        startLaserCast();
+      }
+    }
+
+    if (laserActive) {
+      if (!laserSolid) {
+        laserAlpha = Math.min(1, laserAlpha + dt() / BOSS_LASER_CHARGE_TIME);
+      } else {
+        laserAlpha = 1;
+        if (alive) {
+          const d = pointSegmentDistance(player.pos, laserOrigin, laserDir, laserLength);
+          if (d < BOSS_LASER_WIDTH / 2 + PLAYER_RADIUS) {
+            killPlayer();
+          }
+        }
+      }
+    }
+  });
+
   // fire on a timer
   onUpdate(() => {
     if (!alive || paused) return;
@@ -540,6 +938,50 @@ scene("game", () => {
       color: rgb(255, 255, 255),
     });
 
+    // UI for boss
+    if (bossAlive) {
+      const bossBarWidth = 400;
+      const bossBarHeight = 22;
+      const bossBarX = width() / 2 - bossBarWidth / 2;
+      const bossBarY = height() - 46;
+
+      drawRect({
+        pos: vec2(bossBarX, bossBarY),
+        width: bossBarWidth,
+        height: bossBarHeight,
+        color: rgb(40, 40, 40),
+        opacity: bossUiAlpha * 0.9,
+      });
+      drawRect({
+        pos: vec2(bossBarX, bossBarY),
+        width: (bossBarWidth * Math.max(bossHp, 0)) / BOSS_MAX_HP,
+        height: bossBarHeight,
+        color: rgb(220, 20, 20),
+        opacity: bossUiAlpha,
+      });
+      drawText({
+        text: BOSS_NAME,
+        size: 20,
+        pos: vec2(width() / 2, bossBarY - 18),
+        anchor: "center",
+        color: rgb(255, 255, 255),
+        opacity: bossUiAlpha,
+      });
+    }
+
+    // laser beam ability
+    if (laserActive) {
+      const endPoint = laserOrigin.add(laserDir.scale(laserLength));
+      drawLine({
+        p1: laserOrigin,
+        p2: endPoint,
+        width: BOSS_LASER_WIDTH,
+        color: laserSolid ? rgb(255, 0, 0) : rgb(255, 130, 130),
+        opacity: laserAlpha,
+      });
+    }
+
+    // level up upgrade selection screen
     if (levelUpPending) {
       drawRect({
         pos: vec2(0, 0),
