@@ -5,6 +5,8 @@
 
 Our group created a browser-based survival game inspired by Vampire Survivors, using a slime character that automatically shoots at incoming enemies while the player moves around the arena. The goal is to survive as long as possible, collect XP, level up, unlock upgrades, and fight increasingly difficult waves that culminate in a boss encounter. The project combines fast arcade gameplay with progression systems, making it feel like a compact roguelite survival experience built for a single-session playthrough.
 
+<img width="1664" height="1246" alt="Screen Recording 2026-10-08 232416" src="https://github.com/user-attachments/assets/39c3ebc6-694c-434c-b676-ebaecfa02ab6" />
+
 The game is designed to be simple and replayable. It features enemies spawning continuously, a leveling system that encourages strategic upgrades, and a leaderboard that tracks top scores. We also included a login capability so users can create or sign into an account and have their score stored in MongoDB, creating a more complete game experience than a simple offline prototype.
 
 Project Link: https://auto-shooter.onrender.com/
