@@ -1,49 +1,33 @@
 # Final Project
 *Due October 9th by 1:59 PM*
 
-For your final project, you'll implement a web application that exhibits understanding of the course materials. 
-This project should provide an opportunity to both be creative and to pursue individual research and learning goals.
+#### Project Description
 
-## General description
-Your project should consist of a complete Web application, exhibiting facets of the three main sections of the course material:
+Our group created a browser-based survival game inspired by Vampire Survivors, using a slime character that automatically shoots at incoming enemies while the player moves around the arena. The goal is to survive as long as possible, collect XP, level up, unlock upgrades, and fight increasingly difficult waves that culminate in a boss encounter. The project combines fast arcade gameplay with progression systems, making it feel like a compact roguelite survival experience built for a single-session playthrough.
 
-- Static web page content and design. You should have a project that is accessible, easily navigable, and features significant content.
-- Dynamic behavior implemented with JavaScript (TypeScript is also allowed if your group wants to explore it).
-- Server-side programming *using Node.js*. Typically this will take the form of some sort of persistent data (database), authentication, and possibly server-side computation.
-- A video (less than five minutes) where each group member explains some aspect of the project. An easy way to produce this video is for you all the groups members to join a Zoom call that is recorded; each member can share their screen when they discuss the project or one member can "drive" the interface while other members narrate (this second option will probably work better.) The video should be posted on YouTube or some other accessible video hosting service. Make sure your video is less than five minutes, but long enough to successfully  explain your project and show it in action. There is no minimum video length.
+The game is designed to be simple and replayable. It features enemies spawning continuously, a leveling system that encourages strategic upgrades, and a leaderboard that tracks top scores. We also included a login capability so users can create or sign into an account and have their score stored in MongoDB, creating a more complete game experience than a simple offline prototype.
 
-## Project ideation
-Excellent projects typically serve someone/some group; for this assignment you need to define your users and stakeholders. I encourage you to identify projects that will have impact, either artistically, politically, or in terms of productivity. 
+Project Link: https://auto-shooter.onrender.com/
 
-### Deliverables
+#### Additional Instructions
+You will need to create login credentials using the homepage of the application.
 
-#### Form Team (due 9/11)
-Students are will work in teams of 3-5 students for the project; teams of two can be approved with the permission of the instructor. Working in teams should help enable you to build a good project in a limited amount of time.  Use the `#project-logistics` channel in Discord to pitch ideas for final projects and/or find fellow team members as needed.
+#### Technologies Used
+- Kaplay - This is the game engine used to render the game world, handle player movement, sprites, collisions, projectiles, enemy spawning, boss mechanics, and the overall arcade gameplay loop. It was used to build the actual survival game experience in the browser.
+- JavaScript - The game logic and UI behavior were implemented in JavaScript, including shooting, XP collection, leveling, upgrade application, boss AI, pause states, and the game loop. It's also responsible for the front-end interactions for the login and leaderboard screens.
+- Node.js + Express - A lightweight Express server serves the project, handles HTTP requests, and manages routes for login, logout, and storing player scores. It serves as the backend side of the app and static game files.
+- MongoDB - MongoDB Atlas stores user account information and saved scores. The database is used to keep track of usernames, passwords, and leaderboard data so players can log in and compare scores.
+- cookie-session + dotenv - cookie-session stores the user session information after login so the app can verify that a player is authenticated while playing. dotenv loads environment variables such as database credentials so the server can connect securely to MongoDB.
 
-Teams must be in place by end of day on Friday, September 11th. If you have not identified a team at this point, you will be assigned a team. 
+#### Challenges Faced
+- Kaplay is a new game engine to most of the group, introducing another layer of complexity in coding this project as we'd need to include research not present in the writing of the game's javascript.
+- The short time frame made it difficult to accomodate everyone's schedule when discussing potential implementations of features from the ideation phase, as people were not always active at the same time.
 
-#### Proposal (due 9/18 by end of day) 
-Provide an outline of your project direction and the names of associated team members. 
-The outline should have enough detail so that staff can determine if it meets the minimum expectations, or if it goes too far to be reasonable by the deadline. Please include a general description of a project, and list of key technologies/libraries you plan on using (e.g. React, Three.js, Svelte, TypeScript etc.). Two to four paragraphs should provide enough level of detail. Name the file proposal.md and submit a pull request by Friday, September 18th at 11:59 PM (end of day). *Only one pull request is required per team*.
+#### Group Roles
+Avi - Base game and Boss development
+Owen - Backend mongoDB integration and login page
+Ryan - XP collection and leveling system
+Teagan - Upgrade system and level integration
 
-You will be given some class time to work on your proposal, but please plan on reserving additional time outside of class as needed. There are no other scheduled checkpoints for your project besides the final submission. 
-
-#### Turning in Your Project
-Submit a second PR on the final project repo to turn in your app and code. Again, only one pull request per team.
-
-Deploy your app, in the form of a webpage, to Glitch/Heroku/Digital Ocean or some other service; it is critical that the application functions correctly wherever you post it.
-
-The README for your second pull request should contain:
-
-1. A brief description of what you created, and a link to the project itself (two paragraphs of text)
-2. Any additional instructions that might be needed to fully use your project (login information etc.)
-3. An outline of the technologies you used and how you used them.
-4. What challenges you faced in completing the project.
-5. What each group member was responsible for designing / developing.
-6. A link to your project video.
-
-Think of 1,3, and 4 in particular in a similar vein to the design / tech achievements for A1—A4… make a case for why what you did was challenging and why your implementation deserves a grade of 100%.
-
-## FAQs
-
-- **Can I use XYZ framework?** You can use any web-based frameworks or tools available, but for your server programming you need to use Node.js. Your client-side scripting language should be either JavaScript or TypeScript. While the course staff is happy to help with frameworks used in the class, we can't guarantee we'll be able to assist you with other frameworks / databases; choose carefully!
+#### Video Link
+https://youtu.be/4E59nRcYgb8
