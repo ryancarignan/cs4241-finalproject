@@ -19,7 +19,7 @@ app.use(express.json())
 
 app.use(session({
   name: 'vampire-game-session',
-  keys: ['vampire-secret-key-1', 'vampire-secret-key-2'],
+  keys: [process.env.SESSION_KEY_1, process.env.SESSION_KEY_2],
 }))
 
 const uri = `mongodb+srv://${process.env.USER}:${process.env.PASS}@${process.env.HOST}`
