@@ -11,10 +11,19 @@ kaplay({
 // settings
 setBackground("#0e0c1a");
 
+// sounds
+loadSound("shockwave", "audio/shockwave.mp3");
+
+loadSound("bgm", "audio/the_mountain-game-game-music-508018.mp3");
+
+let bgm = null;
+const MUSIC_VOLUME = 0.5;
+const MUSIC_DUCKED_VOLUME = 0.15;
+
 // Tunable parameters
 const settings = {
   playerSpeed: 220,
-  enemySpeed: 180,
+  enemySpeed: 140,
   fireInterval: 0.5,
   spawnInterval: 1.5,
   projectileSpeed: 600,
@@ -86,18 +95,23 @@ const BOSS_PROJECTILE_RADIUS = 6;
 const BOSS_LASER_MIN_INTERVAL = 12;
 const BOSS_LASER_MAX_INTERVAL = 15;
 const BOSS_LASER_FOLLOW_UP_SHOTS = 2;
-const BOSS_LASER_CHARGE_TIME = 0.2;      // fades in, no collision
+const BOSS_LASER_CHARGE_TIME = 0.25;      // fades in, no collision
 const BOSS_LASER_SOLID_DURATION = 0.1; // full color, has collision
 const BOSS_LASER_WIDTH = 24;
 
 const BOSS_SHOCKWAVE_HP_THRESHOLD = 0.5;
-const BOSS_SHOCKWAVE_CHARGE_TIME = 15;
+const BOSS_SHOCKWAVE_CHARGE_TIME = 12;
 const BOSS_SHOCKWAVE_RING_MAX_RADIUS = 1000;
 
 const BOSS_SAFE_ZONE_RADIUS = 55;
-const BOSS_SAFE_ZONE_CHARGE_TIME = 8;
+const BOSS_SAFE_ZONE_CHARGE_TIME = 6;
 const BOSS_SAFE_ZONE_FINAL_RADIUS = 60;
 const BOSS_SAFE_ZONE_MARGIN = 90; // distance from each corner
+
+// Boss collides
+const PLAYER_BOSS_CONTACT_COOLDOWN = 1;
+const PLAYER_BOSS_BOUNCE_SPEED = 800;  
+const KNOCKBACK_DECAY = 0.85;           
 
 // Define rendering layers
 setLayers(["background", "sprites", "statuses", "menus"], "sprites");
@@ -169,6 +183,7 @@ const pauseOverlay = document.getElementById("pause-overlay");
 document.getElementById("start-btn").addEventListener("click", () => {
   introOverlay.classList.add("hidden");
   paused = false;
+  if (!bgm) bgm = play("bgm", { loop: true, volume: MUSIC_VOLUME });
 });
 
 document.getElementById("resume-btn").addEventListener("click", () => {
@@ -255,10 +270,17 @@ scene("game", () => {
 
   let submittingScore = false;
 
+  // sounds
+  let shockwaveSound = null;
+
   // XP / Leveling
   let xp = 0;
   let playerLevel = 0;
   let nextPlayerLevelXP = FIRST_PLAYER_LEVEL_XP;
+
+  // Boss contact / knockback state (declared per-scene, so it resets on go("game"))
+  let knockback = vec2(0, 0);
+  let bossContactCooldown = 0;
 
   // Boss state
   let gameTime = 0;
@@ -289,6 +311,17 @@ scene("game", () => {
   let shockwaveRing = null;
   let shockwaveElapsed = 0;
   let shockwaveActive = false;
+
+  // pause sounds if the game is paused
+  onUpdate(() => {
+    if (shockwaveSound) shockwaveSound.paused = paused;
+  });
+
+  onUpdate(() => {
+    if (!bgm) return;
+    const target = paused ? MUSIC_DUCKED_VOLUME : MUSIC_VOLUME;
+    bgm.volume = lerp(bgm.volume, target, 8 * dt());
+  });
 
   // Shared death/score handling, used whether the player dies to a normal
   // enemy or to a boss attack, so a score always gets submitted exactly once.
@@ -353,6 +386,13 @@ scene("game", () => {
 
     if (dir.x !== 0 || dir.y !== 0) {
       player.move(dir.unit().scale(settings.playerSpeed));
+    }
+
+    if (knockback.len() > 1) {
+      player.move(knockback);
+      knockback = knockback.scale(Math.pow(KNOCKBACK_DECAY, dt() * 60));
+    } else {
+      knockback = vec2(0, 0);
     }
 
     player.pos.x = clamp(player.pos.x, PLAYER_RADIUS, width() - PLAYER_RADIUS);
@@ -426,6 +466,26 @@ scene("game", () => {
         destroy(enemy);
         hurtPlayer();
       }
+
+      for (const other of get("enemy")) {
+        if (other === enemy || !other.exists()) continue;
+        const diff = enemy.pos.sub(other.pos);
+        const dist = diff.len();
+        const minDist = ENEMY_RADIUS * 2;
+        if (dist > 0.0001 && dist < minDist) {
+          const overlap = minDist - dist;
+          enemy.pos = enemy.pos.add(diff.unit().scale(overlap * 0.5));
+        }
+      }
+
+      if (bossAlive && boss) {
+        const diff = enemy.pos.sub(boss.pos);
+        const dist = diff.len();
+        const minDist = ENEMY_RADIUS + BOSS_RADIUS;
+        if (dist > 0.0001 && dist < minDist) {
+          enemy.pos = enemy.pos.add(diff.unit().scale(minDist - dist));
+        }
+      }
     });
   }
 
@@ -436,6 +496,25 @@ scene("game", () => {
     if (spawnTimer >= spawnInterval) {
       spawnTimer = 0;
       spawnEnemy();
+    }
+  });
+
+  // player collides with boss
+  onUpdate(() => {
+    if (!alive || paused) return;
+    if (bossContactCooldown > 0) bossContactCooldown -= dt();
+
+    if (bossAlive && boss && bossContactCooldown <= 0) {
+      const diff = player.pos.sub(boss.pos);
+      const dist = diff.len();
+      const minDist = PLAYER_RADIUS + BOSS_RADIUS;
+      if (dist < minDist) {
+        const pushDir = dist > 0.0001 ? diff.unit() : vec2(0, -1);
+        player.pos = player.pos.add(pushDir.scale(minDist - dist)); // resolve overlap
+        knockback = pushDir.scale(PLAYER_BOSS_BOUNCE_SPEED);        
+        bossContactCooldown = PLAYER_BOSS_CONTACT_COOLDOWN;
+        hurtPlayer();
+      }
     }
   });
 
@@ -712,9 +791,17 @@ scene("game", () => {
     }
   }
 
+  function stopShockwaveSound() {
+    if (shockwaveSound) {
+      shockwaveSound.stop();
+      shockwaveSound = null;
+    }
+  }
+
   function killBoss() {
     bossAlive = false;
     bossBusy = false;
+    stopShockwaveSound();
     if (boss && boss.exists()) destroy(boss);
     for (const r of get("shockwaveRing")) destroy(r);
     if (safeStation && safeStation.exists()) destroy(safeStation);
@@ -779,6 +866,8 @@ scene("game", () => {
     stationChargeTime = 0;
     shockwaveElapsed = 0;
     shockwaveActive = true;
+
+    shockwaveSound = play("shockwave", { volume: 1.2 });
 
     // Telegraphed instant kill shockwave
     shockwaveRing = add([
